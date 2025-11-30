@@ -56,8 +56,8 @@ Sider employs a tiered storage architecture designed to maximize resource utiliz
 ```mermaid
 graph TD
     Client[Client Application] --> API[Sider Engine API]
-    API --> WAL[Write-Ahead Log (WAL)]
-    API --> MemTable[MemTable (Skip List)]
+    API --> WAL["Write-Ahead Log (WAL)"]
+    API --> MemTable["MemTable (Skip List)"]
     
     subgraph "In-Memory"
         MemTable
@@ -65,9 +65,9 @@ graph TD
     
     subgraph "Persistent Storage"
         WAL
-        SSTable1[SSTable (L0)]
-        SSTable2[SSTable (L1)]
-        SSTableN[SSTable (Ln)]
+        SSTable1["SSTable (L0)"]
+        SSTable2["SSTable (L1)"]
+        SSTableN["SSTable (Ln)"]
     end
 
     MemTable -- Flush --> SSTable1
