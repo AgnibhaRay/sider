@@ -128,7 +128,9 @@ type BloomFilter struct{ BitSet []byte }
 func NewBloomFilter() *BloomFilter { return &BloomFilter{BitSet: make([]byte, BloomFilterSize)} }
 func (bf *BloomFilter) Add(key string) {
 	h1, h2, h3 := hashKey(key)
-	bf.setBit(h1); bf.setBit(h2); bf.setBit(h3)
+	bf.setBit(h1)
+	bf.setBit(h2)
+	bf.setBit(h3)
 }
 func (bf *BloomFilter) MayContain(key string) bool {
 	h1, h2, h3 := hashKey(key)
@@ -141,7 +143,9 @@ func (bf *BloomFilter) checkBit(pos uint32) bool {
 	return (bf.BitSet[(pos/8)%uint32(BloomFilterSize)] & (1 << (pos % 8))) != 0
 }
 func hashKey(key string) (uint32, uint32, uint32) {
-	h := fnv.New32a(); h.Write([]byte(key)); v1 := h.Sum32()
+	h := fnv.New32a()
+	h.Write([]byte(key))
+	v1 := h.Sum32()
 	return v1, v1 * 16777619, v1 * 16777619 * 16777619
 }
 
@@ -171,18 +175,24 @@ func (w *WAL) Recover(sl *SkipList) {
 	r := bufio.NewReader(w.file)
 	for {
 		kind, err := r.ReadByte()
-		if err != nil { break }
+		if err != nil {
+			break
+		}
 		var kLen, vLen int32
 		binary.Read(r, binary.LittleEndian, &kLen)
 		binary.Read(r, binary.LittleEndian, &vLen)
-		kBytes := make([]byte, kLen); vBytes := make([]byte, vLen)
-		io.ReadFull(r, kBytes); io.ReadFull(r, vBytes)
+		kBytes := make([]byte, kLen)
+		vBytes := make([]byte, vLen)
+		io.ReadFull(r, kBytes)
+		io.ReadFull(r, vBytes)
 		sl.Put(string(kBytes), string(vBytes), kind)
 	}
 }
 
 func FlushMemTable(sl *SkipList) {
-	if _, err := os.Stat(DataDir); os.IsNotExist(err) { os.Mkdir(DataDir, 0755) }
+	if _, err := os.Stat(DataDir); os.IsNotExist(err) {
+		os.Mkdir(DataDir, 0755)
+	}
 	f, _ := os.Create(fmt.Sprintf("%s/sstable_%d.db", DataDir, time.Now().UnixNano()))
 	defer f.Close()
 	bf := NewBloomFilter()
@@ -191,7 +201,8 @@ func FlushMemTable(sl *SkipList) {
 		f.Write([]byte{n.Kind})
 		binary.Write(f, binary.LittleEndian, int32(len(n.Key)))
 		binary.Write(f, binary.LittleEndian, int32(len(n.Value)))
-		f.WriteString(n.Key); f.WriteString(n.Value)
+		f.WriteString(n.Key)
+		f.WriteString(n.Value)
 	}
 	offset, _ := f.Seek(0, io.SeekCurrent)
 	f.Write(bf.BitSet)
@@ -201,44 +212,60 @@ func FlushMemTable(sl *SkipList) {
 func SearchSSTables(key string) (string, bool, byte) {
 	files, _ := os.ReadDir(DataDir)
 	for i := len(files) - 1; i >= 0; i-- {
-		if strings.HasPrefix(files[i].Name(), "temp_") { continue }
+		if strings.HasPrefix(files[i].Name(), "temp_") {
+			continue
+		}
 		path := filepath.Join(DataDir, files[i].Name())
-		if v, found, k := searchFile(path, key); found { return v, true, k }
+		if v, found, k := searchFile(path, key); found {
+			return v, true, k
+		}
 	}
 	return "", false, 0
 }
 
 func searchFile(path, key string) (string, bool, byte) {
 	f, err := os.Open(path)
-	if err != nil { return "", false, 0 }
+	if err != nil {
+		return "", false, 0
+	}
 	defer f.Close()
-	
+
 	stat, _ := f.Stat()
-	if stat.Size() < 8 { return "", false, 0 }
+	if stat.Size() < 8 {
+		return "", false, 0
+	}
 	f.Seek(stat.Size()-8, 0)
 	var bfOffset int64
 	binary.Read(f, binary.LittleEndian, &bfOffset)
-	
+
 	f.Seek(bfOffset, 0)
 	bfBytes := make([]byte, BloomFilterSize)
 	io.ReadFull(f, bfBytes)
-	if !(&BloomFilter{BitSet: bfBytes}).MayContain(key) { return "", false, 0 }
+	if !(&BloomFilter{BitSet: bfBytes}).MayContain(key) {
+		return "", false, 0
+	}
 
 	f.Seek(0, 0)
 	r := bufio.NewReader(f)
 	readBytes := int64(0)
 	for readBytes < bfOffset {
 		kind, err := r.ReadByte()
-		if err != nil { break }
+		if err != nil {
+			break
+		}
 		readBytes++
 		var kLen, vLen int32
 		binary.Read(r, binary.LittleEndian, &kLen)
 		binary.Read(r, binary.LittleEndian, &vLen)
 		readBytes += 8
-		kBytes := make([]byte, kLen); vBytes := make([]byte, vLen)
-		io.ReadFull(r, kBytes); io.ReadFull(r, vBytes)
+		kBytes := make([]byte, kLen)
+		vBytes := make([]byte, vLen)
+		io.ReadFull(r, kBytes)
+		io.ReadFull(r, vBytes)
 		readBytes += int64(kLen + vLen)
-		if string(kBytes) == key { return string(vBytes), true, kind }
+		if string(kBytes) == key {
+			return string(vBytes), true, kind
+		}
 	}
 	return "", false, 0
 }
@@ -253,19 +280,21 @@ func Compact(e *Engine) {
 	files, _ := os.ReadDir(DataDir)
 	var paths []string
 	for _, f := range files {
-		if strings.HasSuffix(f.Name(), ".db") { paths = append(paths, filepath.Join(DataDir, f.Name())) }
+		if strings.HasSuffix(f.Name(), ".db") {
+			paths = append(paths, filepath.Join(DataDir, f.Name()))
+		}
 	}
 	sort.Strings(paths)
-	
+
 	// In a real DB, we would use K-Way Merge Sort here with iterators.
 	// For this snippet, we load keys into a map to dedup (memory heavy but simple for demo)
 	merged := make(map[string]string)
-	
+
 	// Read oldest to newest
 	for _, p := range paths {
 		f, _ := os.Open(p)
 		r := bufio.NewReader(f)
-		
+
 		stat, _ := f.Stat()
 		size := stat.Size()
 		// Get Footer
@@ -281,11 +310,13 @@ func Compact(e *Engine) {
 			var kl, vl int32
 			binary.Read(r, binary.LittleEndian, &kl)
 			binary.Read(r, binary.LittleEndian, &vl)
-			current+=8
-			k := make([]byte, kl); v := make([]byte, vl)
-			io.ReadFull(r, k); io.ReadFull(r, v)
+			current += 8
+			k := make([]byte, kl)
+			v := make([]byte, vl)
+			io.ReadFull(r, k)
+			io.ReadFull(r, v)
 			current += int64(kl + vl)
-			
+
 			if kind == CmdDel {
 				delete(merged, string(k))
 			} else {
@@ -299,14 +330,15 @@ func Compact(e *Engine) {
 	newFile := fmt.Sprintf("%s/sstable_%d_compacted.db", DataDir, time.Now().UnixNano())
 	f, _ := os.Create(newFile)
 	bf := NewBloomFilter()
-	
+
 	// Write map to file
 	for k, v := range merged {
 		bf.Add(k)
 		f.Write([]byte{CmdPut})
 		binary.Write(f, binary.LittleEndian, int32(len(k)))
 		binary.Write(f, binary.LittleEndian, int32(len(v)))
-		f.WriteString(k); f.WriteString(v)
+		f.WriteString(k)
+		f.WriteString(v)
 	}
 	off, _ := f.Seek(0, io.SeekCurrent)
 	f.Write(bf.BitSet)
@@ -314,7 +346,9 @@ func Compact(e *Engine) {
 	f.Close()
 
 	// Remove old files
-	for _, p := range paths { os.Remove(p) }
+	for _, p := range paths {
+		os.Remove(p)
+	}
 	fmt.Println(">> Compaction Done")
 }
 
@@ -354,7 +388,9 @@ func (e *Engine) Get(key string) string {
 	defer e.mu.RUnlock()
 	// MemTable
 	if v, found, k := e.MemTable.Get(key); found {
-		if k == CmdDel { return "(nil)" }
+		if k == CmdDel {
+			return "(nil)"
+		}
 		return v
 	}
 	// SSTables
@@ -371,14 +407,18 @@ func handleConnection(conn net.Conn, e *Engine) {
 	for {
 		// Read command line
 		line, err := reader.ReadString('\n')
-		if err != nil { break } // Client disconnected
-		
+		if err != nil {
+			break
+		} // Client disconnected
+
 		line = strings.TrimSpace(line)
 		parts := strings.SplitN(line, " ", 3)
-		if len(parts) == 0 { continue }
+		if len(parts) == 0 {
+			continue
+		}
 
 		cmd := strings.ToUpper(parts[0])
-		
+
 		switch cmd {
 		case "PUT":
 			if len(parts) < 3 {
@@ -387,7 +427,7 @@ func handleConnection(conn net.Conn, e *Engine) {
 			}
 			e.Put(parts[1], parts[2])
 			conn.Write([]byte("OK\n"))
-		
+
 		case "GET":
 			if len(parts) < 2 {
 				conn.Write([]byte("ERR Usage: GET <key>\n"))
@@ -395,7 +435,7 @@ func handleConnection(conn net.Conn, e *Engine) {
 			}
 			val := e.Get(parts[1])
 			conn.Write([]byte(val + "\n"))
-			
+
 		case "DEL":
 			if len(parts) < 2 {
 				conn.Write([]byte("ERR Usage: DEL <key>\n"))
@@ -420,7 +460,7 @@ func handleConnection(conn net.Conn, e *Engine) {
 func main() {
 	rand.Seed(time.Now().UnixNano())
 	engine := NewEngine()
-	
+
 	listener, err := net.Listen("tcp", Port)
 	if err != nil {
 		log.Fatal("Error starting server:", err)
