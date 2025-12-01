@@ -99,33 +99,35 @@ cd sider
 go build -o sider main.go
 ```
 
-### CLI Usage
+### Server Usage
 
-Sider includes a built-in CLI for direct interaction with the database engine.
+Sider runs as a high-performance TCP server listening on port `4000` by default.
 
 ```bash
 $ ./sider
 
 ========================================
-   SIDER DB (Advanced LSM Engine)      
-   Version: 1.0.0                      
+   SIDER SERVER LISTENING ON :4000   
+   Version: 1.0.1                      
    Author:  AgnibhaRay                 
-   Now with Compaction!                
 ========================================
-Commands: put <k> <v> | get <k> | del <k> | compact | exit
-
-sider> put user_123 {"name": "Alice", "role": "admin"}
-OK
-
-sider> get user_123
-"{\"name\": \"Alice\", \"role\": \"admin\"}"
-
-sider> del user_123
-OK (Tombstone written)
-
-sider> get user_123
-(nil)
 ```
+
+### Client Interaction
+
+You can connect using `netcat`, `telnet`, or any TCP client.
+
+```bash
+$ nc localhost 4000
+PUT user:100 {"name": "Alice"}
+OK
+GET user:100
+{"name": "Alice"}
+DEL user:100
+OK
+```
+
+A Python driver (`driver.py`) is also included for programmatic access.
 
 ---
 
