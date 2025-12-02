@@ -1,7 +1,7 @@
 import socket
 
 class SiderClient:
-    def __init__(self, host='localhost', port=4000):
+    def __init__(self, host='20.197.19.241', port=4000):
         self.host = host
         self.port = port
         self.sock = None

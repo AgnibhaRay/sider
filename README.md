@@ -131,6 +131,60 @@ A Python driver (`driver.py`) is also included for programmatic access.
 
 ---
 
+## 🐳 Docker Deployment
+
+Sider is container-ready and includes a multi-stage `Dockerfile` for building lightweight images.
+
+### Build the Image
+```bash
+docker build -t sider .
+```
+
+### Run the Container
+```bash
+docker run -d -p 4000:4000 --name sider sider
+```
+
+### Persist Data
+To ensure data persists across container restarts, mount a volume:
+```bash
+docker run -d -p 4000:4000 -v $(pwd)/data:/root/data --name sider sider
+```
+
+---
+
+## ☁️ Azure Deployment
+
+You can easily deploy Sider to Azure Container Apps for a serverless experience.
+
+### Prerequisites
+- Azure CLI installed and authenticated (`az login`)
+- An Azure Container Registry (ACR) or Docker Hub account
+
+### 1. Push Image to Registry
+```bash
+# Tag the image
+docker tag sider <your-registry>.azurecr.io/sider:latest
+
+# Push to ACR
+az acr login --name <your-registry>
+docker push <your-registry>.azurecr.io/sider:latest
+```
+
+### 2. Deploy to Azure Container Apps
+```bash
+az containerapp up \
+  --name sider-db \
+  --resource-group my-resource-group \
+  --image <your-registry>.azurecr.io/sider:latest \
+  --target-port 4000 \
+  --ingress external
+```
+
+Once deployed, you can connect to your Sider instance using the provided public FQDN on port 443 (TLS termination is handled by Azure).
+
+---
+
 ## 🔬 Internal Mechanics
 
 ### Write Path
