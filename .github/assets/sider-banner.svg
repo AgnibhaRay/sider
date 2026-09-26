@@ -1,0 +1,134 @@
+<svg width="800" height="200" viewBox="0 0 800 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .sider-stroke { stroke: #000000; }
+    .sider-fill { fill: #000000; }
+    .sider-text-sub { fill: #595855; }
+    .sider-border { stroke: #dfdcd5; }
+    @media (prefers-color-scheme: dark) {
+      .sider-stroke { stroke: #ffffff; }
+      .sider-fill { fill: #ffffff; }
+      .sider-text-sub { fill: #9e9c96; }
+      .sider-border { stroke: #2a2a2a; }
+    }
+  </style>
+
+  <!-- Hairline Frame -->
+  <rect x="1" y="1" width="798" height="198" rx="8" class="sider-border" stroke-width="1" fill="none" />
+
+  <!-- Logo Emblem Group (Centered vertically on the left) -->
+  <g transform="translate(60, 40)">
+    <!-- Outer Circular Compass & Precision Ticks -->
+    <circle
+      cx="60"
+      cy="60"
+      r="55"
+      class="sider-stroke"
+      stroke-width="1.2"
+      stroke-dasharray="3 4"
+      opacity="0.45"
+    />
+    <circle
+      cx="60"
+      cy="60"
+      r="50"
+      class="sider-stroke"
+      stroke-width="1.5"
+    />
+
+    <!-- Cardinal Ticks -->
+    <line x1="60" y1="1" x2="60" y2="8" class="sider-stroke" stroke-width="2" stroke-linecap="round" />
+    <line x1="60" y1="112" x2="60" y2="119" class="sider-stroke" stroke-width="2" stroke-linecap="round" />
+    <line x1="1" y1="60" x2="8" y2="60" class="sider-stroke" stroke-width="2" stroke-linecap="round" />
+    <line x1="112" y1="60" x2="119" y2="60" class="sider-stroke" stroke-width="2" stroke-linecap="round" />
+
+    <!-- Isometric S Monolith (scaled 2.5x from 48x48) -->
+    <g transform="translate(60, 60) scale(2.5) translate(-24, -24)">
+      <!-- Tier 1: MemTable Ingestion & Upper Diamond -->
+      <path
+        d="M 14 14.5 L 24 9 L 34 14.5 L 34 20.5 L 29.5 23 L 29.5 17 L 24 14 L 18.5 17 L 14 14.5 Z"
+        class="sider-fill"
+      />
+
+      <!-- Tier 2: WAL Nexus (Central Hexagonal Bridge) -->
+      <path
+        d="M 18.5 19.5 L 24 16.5 L 29.5 19.5 L 29.5 25 L 24 28 L 18.5 25 Z"
+        class="sider-stroke"
+        stroke-width="1.2"
+        fill="none"
+        stroke-dasharray="2 2"
+        opacity="0.65"
+      />
+
+      <!-- Tier 3: Central Diagonal Spine -->
+      <path
+        d="M 29.5 22.5 L 24 25.5 L 18.5 22.5 L 14 25 L 18.5 27.5 L 24 24.5 L 29.5 27.5 L 34 25 L 29.5 22.5 Z"
+        class="sider-fill"
+      />
+
+      <!-- Tier 4: SSTable Disk Foundation Bar -->
+      <path
+        d="M 14 27.5 L 18.5 25 L 18.5 31 L 24 34 L 29.5 31 L 34 33.5 L 24 39 L 14 33.5 Z"
+        class="sider-fill"
+      />
+
+      <!-- Core Silicon Anchor -->
+      <circle cx="24" cy="24" r="1.75" class="sider-fill" />
+    </g>
+  </g>
+
+  <!-- Typography Hierarchy on the right -->
+  <g transform="translate(230, 0)">
+    <!-- Wordmark -->
+    <text
+      x="0"
+      y="98"
+      class="sider-fill"
+      font-family="'Playfair Display', Georgia, 'Times New Roman', serif"
+      font-size="64"
+      font-weight="600"
+      letter-spacing="-1.5"
+    >
+      SIDER
+    </text>
+
+    <!-- Version badge inline -->
+    <rect x="236" y="55" width="56" height="24" rx="4" class="sider-border" stroke-width="1" fill="none" />
+    <text
+      x="264"
+      y="71"
+      class="sider-fill"
+      font-family="system-ui, -apple-system, sans-serif"
+      font-size="11"
+      font-weight="600"
+      text-anchor="middle"
+    >
+      v2.0.0
+    </text>
+
+    <!-- Sub-headline -->
+    <text
+      x="0"
+      y="130"
+      class="sider-fill"
+      font-family="system-ui, -apple-system, sans-serif"
+      font-size="14"
+      font-weight="500"
+      letter-spacing="0.08em"
+    >
+      HIGH PERSISTENCE ON SILICON
+    </text>
+
+    <!-- Details -->
+    <text
+      x="0"
+      y="156"
+      class="sider-text-sub"
+      font-family="system-ui, -apple-system, sans-serif"
+      font-size="12"
+      font-weight="400"
+      letter-spacing="0.04em"
+    >
+      LSM-Tree Key-Value Engine &bull; Sub-Millisecond &bull; Zero External Dependencies
+    </text>
+  </g>
+</svg>
