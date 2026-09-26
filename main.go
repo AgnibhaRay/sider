@@ -787,7 +787,7 @@ func main() {
 
 	fmt.Println("========================================")
 	fmt.Printf("   SIDER SERVER LISTENING ON %s   \n", Port)
-	fmt.Println("   Version: 1.0.1                      ")
+	fmt.Println("   Version: 2.0.0                      ")
 	fmt.Println("   Author:  AgnibhaRay                 ")
 	fmt.Println("========================================")
 

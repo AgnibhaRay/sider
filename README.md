@@ -10,9 +10,10 @@
  |____/|___|____/|_____|_| \_\  DB
 ```
 
-### ⚡ The Ultra-Fast, LSM-Tree Persistent Key-Value Store & Real-Time Engine ⚡
+### ⚡ SIDER v2: The Ultra-Fast, LSM-Tree Persistent Key-Value Store & Real-Time Engine ⚡
 *(Hint: Read **SIDER** backwards and see the fun 😉)*
 
+[![Release](https://img.shields.io/badge/Release-v2.0.0-ff69b4?style=for-the-badge&logo=github&logoColor=white)](https://github.com/AgnibhaRay/sider/releases/tag/v2.0.0)
 [![Go](https://img.shields.io/badge/Go-1.24+-00ADD8?style=for-the-badge&logo=go&logoColor=white)](https://go.dev/)
 [![CI](https://img.shields.io/badge/Build-Passing-brightgreen?style=for-the-badge&logo=githubactions&logoColor=white)](https://github.com/AgnibhaRay/sider/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge)](LICENSE)
@@ -22,6 +23,7 @@
 
 <br/>
 
+**[What's New in v2](#-whats-new-in-sider-v2)** •
 **[Features](#-key-features)** •
 **[Architecture](#-system-architecture)** •
 **[Command Reference](#-protocol--command-reference)** •
@@ -40,6 +42,18 @@
 ```
 
 </div>
+
+---
+
+## 🚀 What's New in Sider v2
+
+Sider v2 is a major leap forward from a standalone LSM storage engine into a production-ready, durable alternative to Redis:
+
+- ⏱️ **Durable Key Expiration (TTL)**: Nanosecond-precision Unix timestamp binary encoding embedded into WAL entries and SSTables (`PUTEX`, `EXPIRE`, `TTL`). Expiry survives crashes, flushes, and compactions.
+- 📡 **Built-in Streaming Pub/Sub Broker**: Thread-safe channel-based publisher and subscriber fan-out over active client TCP connections (`SUBSCRIBE`, `UNSUBSCRIBE`, `PUBLISH`).
+- 🧹 **Prefix-based Invalidation**: Batch-clear entire key namespaces in memory and on disk with `CLEAR <prefix>`, ideal for multi-tenant cache invalidation.
+- 🧪 **Full Test Coverage & CI**: Integrated Go unit & integration test suite verifying SkipList concurrency, Bloom filter bounds, and Pub/Sub pipelines.
+- ☕ **Production Multi-Language Clients**: Production-ready Java (Spring Boot Cache & PubSub) and Python interactive drivers.
 
 ---
 
@@ -160,7 +174,7 @@ go build -o sider main.go
 ```
 ========================================
    SIDER SERVER LISTENING ON :4000   
-   Version: 1.0.1                      
+   Version: 2.0.0                      
    Author:  AgnibhaRay                 
 ========================================
 ```
@@ -320,7 +334,7 @@ $ go test -v ./...
 === RUN   TestBrokerPubSub
 --- PASS: TestBrokerPubSub (0.00s)
 PASS
-ok      sider   0.967s
+ok      sider   0.920s
 ```
 
 ---
