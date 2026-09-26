@@ -173,13 +173,9 @@ go build -o sider main.go
 ./sider
 ```
 
-```
-========================================
-   SIDER SERVER LISTENING ON :4000   
-   Version: 2.0.0                      
-   Author:  AgnibhaRay                 
-========================================
-```
+<p align="center">
+  <img src=".github/assets/cli-screenshot.png" alt="Sider v2 Interactive CLI Session" width="100%" style="border-radius: 12px; box-shadow: 0 8px 30px rgba(0,0,0,0.4);" />
+</p>
 
 ### 2. Interactive Terminal (`netcat`)
 
