@@ -65,11 +65,32 @@ class SiderClient:
     def put(self, key, value):
         return self._send_command(f"PUT {key} {value}")
 
+    def put_with_ttl(self, key, ttl_seconds, value):
+        return self._send_command(f"PUTEX {key} {ttl_seconds} {value}")
+
     def get(self, key):
         return self._send_command(f"GET {key}")
 
     def delete(self, key):
         return self._send_command(f"DEL {key}")
+
+    def expire(self, key, ttl_seconds):
+        return self._send_command(f"EXPIRE {key} {ttl_seconds}")
+
+    def ttl(self, key):
+        return self._send_command(f"TTL {key}")
+
+    def clear(self, key_prefix):
+        return self._send_command(f"CLEAR {key_prefix}")
+
+    def subscribe(self, channel):
+        return self._send_command(f"SUBSCRIBE {channel}")
+
+    def unsubscribe(self, channel):
+        return self._send_command(f"UNSUBSCRIBE {channel}")
+
+    def publish(self, channel, message):
+        return self._send_command(f"PUBLISH {channel} {message}")
     
     def compact(self):
         return self._send_command("COMPACT")
@@ -93,7 +114,7 @@ def run_cli(host, port):
         print("   (You can still type commands, it will try to reconnect)")
 
     print("\n--- Sider Shell ---")
-    print("Commands: PUT <k> <v> | GET <k> | DEL <k> | COMPACT | EXIT")
+    print("Commands: PUT <k> <v> | PUTEX <k> <ttl> <v> | GET <k> | DEL <k> | EXPIRE <k> <ttl> | TTL <k> | CLEAR <prefix> | SUBSCRIBE <channel> | UNSUBSCRIBE <channel> | PUBLISH <channel> <msg> | COMPACT | EXIT")
     print("-------------------")
 
     while True:
@@ -126,7 +147,7 @@ def run_cli(host, port):
                 else:
                     print(f"❌ Could not reach {new_host}:{new_port}")
 
-            elif cmd in ["PUT", "GET", "DEL", "COMPACT"]:
+            elif cmd in ["PUT", "PUTEX", "GET", "DEL", "EXPIRE", "TTL", "CLEAR", "SUBSCRIBE", "UNSUBSCRIBE", "PUBLISH", "COMPACT"]:
                 # Pass raw command string directly to the helper
                 # This handles the logic for us
                 resp = client._send_command(user_input)
@@ -139,8 +160,14 @@ def run_cli(host, port):
             
             elif cmd == "HELP":
                 print("  PUT <key> <value>  : Save data")
+                print("  PUTEX <key> <ttl> <value> : Save data with expiration")
                 print("  GET <key>          : Read data")
                 print("  DEL <key>          : Delete data")
+                print("  EXPIRE <key> <ttl>: Set expiration")
+                print("  TTL <key>         : Read remaining seconds")
+                print("  CLEAR <prefix>    : Delete keys by prefix")
+                print("  SUBSCRIBE <channel> / UNSUBSCRIBE <channel>")
+                print("  PUBLISH <channel> <message>")
                 print("  COMPACT            : Trigger disk compaction")
                 print("  CONNECT <host>     : Switch server")
                 print("  EXIT               : Quit")

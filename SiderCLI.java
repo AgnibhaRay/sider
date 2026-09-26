@@ -79,12 +79,40 @@ public class SiderCLI {
             return sendCommand("PUT " + key + " " + value);
         }
 
+        public String putWithTtl(String key, long ttlSeconds, String value) {
+            return sendCommand("PUTEX " + key + " " + ttlSeconds + " " + value);
+        }
+
         public String get(String key) {
             return sendCommand("GET " + key);
         }
 
         public String delete(String key) {
             return sendCommand("DEL " + key);
+        }
+
+        public String expire(String key, long ttlSeconds) {
+            return sendCommand("EXPIRE " + key + " " + ttlSeconds);
+        }
+
+        public String ttl(String key) {
+            return sendCommand("TTL " + key);
+        }
+
+        public String clear(String keyPrefix) {
+            return sendCommand("CLEAR " + keyPrefix);
+        }
+
+        public String subscribe(String channel) {
+            return sendCommand("SUBSCRIBE " + channel);
+        }
+
+        public String unsubscribe(String channel) {
+            return sendCommand("UNSUBSCRIBE " + channel);
+        }
+
+        public String publish(String channel, String message) {
+            return sendCommand("PUBLISH " + channel + " " + message);
         }
 
         public String compact() {
@@ -129,7 +157,7 @@ public class SiderCLI {
         }
 
         System.out.println("\n--- Sider Shell ---");
-        System.out.println("Commands: PUT <k> <v> | GET <k> | DEL <k> | COMPACT | EXIT");
+        System.out.println("Commands: PUT <k> <v> | PUTEX <k> <ttl> <v> | GET <k> | DEL <k> | EXPIRE <k> <ttl> | TTL <k> | CLEAR <prefix> | SUBSCRIBE <channel> | UNSUBSCRIBE <channel> | PUBLISH <channel> <msg> | COMPACT | EXIT");
         System.out.println("-------------------");
 
         Scanner scanner = new Scanner(System.in);
@@ -168,7 +196,9 @@ public class SiderCLI {
                         System.out.println("❌ Could not reach " + newHost + ":" + newPort);
                     }
                 } 
-                else if (cmd.equals("PUT") || cmd.equals("GET") || cmd.equals("DEL") || cmd.equals("COMPACT")) {
+                else if (cmd.equals("PUT") || cmd.equals("PUTEX") || cmd.equals("GET") || cmd.equals("DEL")
+                        || cmd.equals("EXPIRE") || cmd.equals("TTL") || cmd.equals("CLEAR") || cmd.equals("SUBSCRIBE")
+                        || cmd.equals("UNSUBSCRIBE") || cmd.equals("PUBLISH") || cmd.equals("COMPACT")) {
                     // Send raw command
                     String response = client.sendRaw(input);
                     if (response.startsWith("Error")) {
@@ -179,8 +209,14 @@ public class SiderCLI {
                 } 
                 else if (cmd.equals("HELP")) {
                     System.out.println("  PUT <key> <value>  : Save data");
+                    System.out.println("  PUTEX <key> <ttl> <value> : Save data with expiration");
                     System.out.println("  GET <key>          : Read data");
                     System.out.println("  DEL <key>          : Delete data");
+                    System.out.println("  EXPIRE <key> <ttl>: Set expiration");
+                    System.out.println("  TTL <key>         : Read remaining seconds");
+                    System.out.println("  CLEAR <prefix>    : Delete keys by prefix");
+                    System.out.println("  SUBSCRIBE <channel> / UNSUBSCRIBE <channel>");
+                    System.out.println("  PUBLISH <channel> <message>");
                     System.out.println("  COMPACT            : Trigger disk compaction");
                     System.out.println("  CONNECT <host>     : Switch server");
                     System.out.println("  EXIT               : Quit");

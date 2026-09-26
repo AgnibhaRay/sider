@@ -1,111 +1,163 @@
-# SIDER DB(Read SIDER from the right and see the fun)
+# <p align="center"><img src="https://raw.githubusercontent.com/AgnibhaRay/sider/main/.github/assets/sider-banner.png" alt="SIDER DB" width="100%" onerror="this.style.display='none'" /></p>
 
 <div align="center">
 
-**High-Performance, LSM-Tree Key-Value Store**
+```
+  ____  ___ ____  _____ ____  
+ / ___||_ _|  _ \| ____|  _ \ 
+ \___ \ | || | | |  _| | |_) |
+  ___) || || |_| | |___|  _ < 
+ |____/|___|____/|_____|_| \_\  DB
+```
 
-[![Go Version](https://img.shields.io/badge/Go-1.20+-00ADD8?style=flat-square&logo=go)](https://go.dev/)
-[![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
-[![Status](https://img.shields.io/badge/Status-Production-success?style=flat-square)](https://github.com/AgnibhaRay/sider)
-[![Performance](https://img.shields.io/badge/Performance-High-orange?style=flat-square)](https://github.com/AgnibhaRay/sider)
+### ⚡ The Ultra-Fast, LSM-Tree Persistent Key-Value Store & Real-Time Engine ⚡
+*(Hint: Read **SIDER** backwards and see the fun 😉)*
 
-*Persistent • ACID Compliant • Dependency-Free*
+[![Go](https://img.shields.io/badge/Go-1.24+-00ADD8?style=for-the-badge&logo=go&logoColor=white)](https://go.dev/)
+[![CI](https://img.shields.io/badge/Build-Passing-brightgreen?style=for-the-badge&logo=githubactions&logoColor=white)](https://github.com/AgnibhaRay/sider/actions)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge)](LICENSE)
+[![Architecture: LSM-Tree](https://img.shields.io/badge/Architecture-LSM--Tree-blueviolet?style=for-the-badge)](https://github.com/AgnibhaRay/sider)
+[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=for-the-badge&logo=docker&logoColor=white)](Dockerfile)
+[![Zero Dependency](https://img.shields.io/badge/Dependencies-Zero-success?style=for-the-badge)](go.mod)
 
-```ascii
-╔═══════════════════════════════════════════════════════════╗
-║  ⚡ Sub-millisecond Latency |  🔒 Data Integrity  |  🎯 Zero Dependencies  ║
-╚═══════════════════════════════════════════════════════════╝
+<br/>
+
+**[Features](#-key-features)** •
+**[Architecture](#-system-architecture)** •
+**[Command Reference](#-protocol--command-reference)** •
+**[Quick Start](#-quick-start)** •
+**[Client Libraries](#-client-libraries--drivers)** •
+**[Benchmarks](#-performance--complexity)** •
+**[Docker & Cloud](#-deployment--docker)**
+
+<br/>
+
+```text
+╔═════════════════════════════════════════════════════════════════════════════════╗
+║  ⚡ Sub-Millisecond Latency  •  🔒 WAL Durability  •  ⏱️ Persistent TTL         ║
+║  📡 Built-in Pub/Sub Engine  •  🎯 Bloom Filters   •  📦 Single-Binary Go Engine ║
+╚═════════════════════════════════════════════════════════════════════════════════╝
 ```
 
 </div>
 
 ---
 
-## 📖 Overview
+## 🌟 Overview
 
-**Sider** is an embedded, persistent key-value store engineered for high-throughput and low-latency workloads. Built on the **Log-Structured Merge-Tree (LSM-Tree)** architecture, Sider provides a robust storage solution that balances write performance, read efficiency, and data durability.
+**Sider** is a high-performance, embedded & networked key-value database built from scratch around a **Log-Structured Merge-Tree (LSM-Tree)** architecture. Designed as a lean, durable, and persistent alternative to Redis, Sider combines the high read/write throughput of memory with the rock-solid durability of sequential disk storage.
 
-Designed with a philosophy of minimalism and reliability, Sider eliminates external dependencies, offering a single-binary deployment model ideal for embedded systems, edge computing, and high-performance caching layers. It incorporates advanced storage engine features including **Bloom Filters**, **Write-Ahead Logging (WAL)**, and **Tombstone-based Deletions** to ensure enterprise-grade data integrity and performance.
+Traditional in-memory data stores require massive RAM overhead and complex snapshotting (RDB/AOF). **Sider flips the paradigm**: writes land instantly in a Write-Ahead Log (WAL) and an in-memory **Skip List MemTable**, before being flushed into immutable, **Bloom Filter-indexed SSTables** on disk with background deduplication and compaction.
+
+With native **durable TTL expiration**, **prefix namespace purging**, and a low-latency **streaming Pub/Sub broker**, Sider is built for high-throughput caching, event dispatching, and distributed microservices.
 
 ---
 
-## 🚀 Core Capabilities
+## 🚀 Key Features
 
-### ⚡ High-Performance Storage Engine
-- **LSM-Tree Architecture**: Optimized for write-heavy workloads by converting random writes into sequential disk I/O.
-- **Skip List MemTable**: Provides $O(\log n)$ time complexity for in-memory insertions and lookups.
-- **Bloom Filters**: Probabilistic data structures integrated into SSTables to reduce unnecessary disk reads by over 90%.
-- **Compaction**: Merges multiple SSTables into a single optimized file, reclaiming space by removing overwritten data and deleted keys (tombstones).
-
-### 🛡️ Data Durability & Integrity
-- **Write-Ahead Logging (WAL)**: Ensures atomicity and durability. All operations are persisted to an append-only log before memory modification, guaranteeing zero data loss on crash recovery.
-- **Crash Recovery**: Automatic log replay mechanism restores the database state to the last committed transaction upon restart.
-- **ACID Compliance**: Guarantees Atomicity, Consistency, Isolation, and Durability for single-key operations.
-
-### 📦 Operational Simplicity
-- **Zero Dependencies**: Written in pure Go, requiring no external libraries or C bindings.
-- **Embeddable**: Designed to be linked directly into Go applications or run as a standalone lightweight service.
-- **Tombstone Deletions**: Implements logical deletions via tombstones, ensuring correct behavior in a versioned storage system.
+| Capability | Technical Implementation | Value to Developers |
+| :--- | :--- | :--- |
+| **⚡ High Write Throughput** | LSM-Tree sequential append writes | Eliminates random disk write penalties entirely. |
+| **🛡️ Zero-Loss Durability** | Synchronous Write-Ahead Logging (WAL) | Recovers instantaneously after unannounced crashes or power loss. |
+| **🔍 90%+ Disk I/O Skip** | BitSet Bloom Filters (FNV-1a Hash) | Non-existent keys are caught before touching the disk. |
+| **⏱️ Durable TTL Expiry** | 8-byte Unix timestamp binary packing | Expiration survived node restarts and SSTable compactions (`PUTEX`, `EXPIRE`, `TTL`). |
+| **📡 Real-Time Pub/Sub** | Multiplexed non-blocking TCP broker | Stream notifications & alerts to thousands of subscribers (`PUBLISH`, `SUBSCRIBE`). |
+| **🧹 Bulk Cache Invalidation**| Prefix scanning iterator (`CLEAR`) | Invalidate tenant or entity cache partitions with a single command. |
+| **🗜️ Disk Space Compaction** | K-Way merge with Tombstone collection | Dedupes obsolete updates and frees up disk space seamlessly. |
+| **🪶 Zero Dependencies** | Pure Standard Library Go | Single static executable with zero C-bindings or runtime dependencies. |
 
 ---
 
 ## 🏗️ System Architecture
 
-Sider employs a tiered storage architecture designed to maximize resource utilization and performance.
-
 ```mermaid
 graph TD
-    Client[Client Application] --> API[Sider Engine API]
-    API --> WAL["Write-Ahead Log (WAL)"]
-    API --> MemTable["MemTable (Skip List)"]
+    Client["Client Request (TCP :4000)"] --> Conn["Connection Handler"]
     
-    subgraph "In-Memory"
-        MemTable
-    end
-    
-    subgraph "Persistent Storage"
-        WAL
-        SSTable1["SSTable (L0)"]
-        SSTable2["SSTable (L1)"]
-        SSTableN["SSTable (Ln)"]
+    subgraph "Sider Engine Pipeline"
+        Conn --> Broker{"Command Router"}
+        Broker -- "PUBLISH / SUBSCRIBE" --> PS["Pub/Sub Broker (Fan-Out)"]
+        Broker -- "CRUD / TTL / CLEAR" --> Engine["Storage Engine"]
+        
+        subgraph "Memory Tier"
+            Engine --> MemTable["MemTable (Concurrent Skip List)"]
+            Engine --> WAL["Write-Ahead Log (sider.wal)"]
+        end
+
+        subgraph "Disk Tier (SSTables)"
+            MemTable -- "MemtableLimit Reached" --> Flush["Flush & Freeze"]
+            Flush --> SSTable0["SSTable 0 (.db) + Bloom Filter"]
+            Flush --> SSTable1["SSTable 1 (.db) + Bloom Filter"]
+            SSTable0 -. "COMPACT" .-> Compactor["Compaction Engine"]
+            SSTable1 -. "K-Way Merge & Purge" .-> Compactor
+            Compactor --> SSTMerged["Compacted SSTable + New Bloom Filter"]
+        end
     end
 
-    MemTable -- Flush --> SSTable1
-    SSTable1 -. Compaction .-> SSTable2
+    PS --> Sub1["Active Subscriber 1"]
+    PS --> Sub2["Active Subscriber 2"]
 ```
 
-### Component Breakdown
+### The Read & Write Lifecycle
 
-| Component | Implementation Details | Role |
-|-----------|------------------------|------|
-| **MemTable** | Skip List (Probabilistic Balancing) | Buffers writes in memory for fast access. Supports concurrent reads. |
-| **WAL** | Append-Only File | Persists operations for crash recovery. Truncated upon successful MemTable flush. |
-| **SSTable** | Immutable Sorted File | On-disk storage format. Contains sorted Key-Value pairs and a Bloom Filter block. |
-| **Bloom Filter** | Bitset (FNV-1a Hash) | Space-efficient structure to test set membership, minimizing disk I/O for non-existent keys. |
+```
+WRITE PATH : Client ──► WAL (Disk Append) ──► MemTable (Skip List O(log N)) ──► [Flush to SSTable on Limit]
+                                                                                       │
+READ PATH  : Client ──► MemTable Check ──► SSTable Bloom Filter Check ──► SSTable Binary Search ──► Return
+```
+
+1. **Write Path**: Operations append to `sider.wal` in sequential binary format first. The key-value record is then inserted into the Skip List MemTable in $O(\log N)$.
+2. **Read Path**: The MemTable is checked first. If missing, SSTables are checked in reverse chronological order. Each SSTable's embedded Bloom filter is evaluated in memory—if negative, disk reads are skipped completely!
+3. **Deletions & Expirations**: Logical tombstones and Unix-epoch binary TTL prefixes guarantee consistency across flushes, crash-recovery, and background compactions.
 
 ---
 
-## 💻 Getting Started
+## 📋 Protocol & Command Reference
 
-### Prerequisites
-- **Go 1.20** or higher
-- POSIX-compliant file system (for data persistence)
+Sider uses a clean, line-delimited ASCII protocol over TCP (port `4000`), making it compatible with `netcat`, `telnet`, or any custom TCP socket client.
 
-### Installation
+### Core Key-Value Operations
+
+| Command | Arguments | Description | Example Response |
+| :--- | :--- | :--- | :--- |
+| `PUT` | `<key> <val>` | Store key-value pair persistently | `OK` |
+| `GET` | `<key>` | Fetch value by key | `<value>` or `(nil)` |
+| `DEL` | `<key>` | Write tombstone deletion | `OK` |
+| `PUTEX` | `<key> <ttl-sec> <val>` | Store key-value with TTL in seconds | `OK` |
+| `EXPIRE` | `<key> <ttl-sec>` | Update or attach TTL to existing key | `1` (success) / `0` (not found) |
+| `TTL` | `<key>` | Get remaining time to live | Remaining seconds, `-1` (no TTL), `-2` (expired/absent) |
+| `CLEAR` | `<prefix>` | Evict all keys matching prefix | `CLEARED <count>` |
+| `COMPACT` | *none* | Trigger asynchronous SSTable merge | `OK Compact Started` |
+
+### Pub/Sub Messaging Operations
+
+| Command | Arguments | Description | Example Response |
+| :--- | :--- | :--- | :--- |
+| `SUBSCRIBE` | `<channel>` | Register socket to channel event stream | `SUBSCRIBED <channel>` |
+| `UNSUBSCRIBE` | `<channel>` | Deregister socket from channel | `UNSUBSCRIBED <channel>` |
+| `PUBLISH` | `<channel> <msg>` | Broadcast message to all channel subscribers | `PUBLISHED <subscriber-count>` |
+
+> **Subscriber Streaming Format**: When a message is published, subscribers receive `MESSAGE <channel> <message>\n` directly on their TCP stream.
+
+---
+
+## 🏁 Quick Start
+
+### 1. Build & Run from Source
 
 ```bash
+# Clone the repository
 git clone https://github.com/AgnibhaRay/sider.git
 cd sider
+
+# Build the native binary
 go build -o sider main.go
+
+# Start the server (default port :4000)
+./sider
 ```
 
-### Server Usage
-
-Sider runs as a high-performance TCP server listening on port `4000` by default.
-
-```bash
-$ ./sider
-
+```
 ========================================
    SIDER SERVER LISTENING ON :4000   
    Version: 1.0.1                      
@@ -113,168 +165,201 @@ $ ./sider
 ========================================
 ```
 
-### Client Interaction
-
-You can connect using `netcat`, `telnet`, or any TCP client.
+### 2. Interactive Terminal (`netcat`)
 
 ```bash
 $ nc localhost 4000
-PUT user:100 {"name": "Alice"}
+PUT greeting "Hello World"
 OK
-GET user:100
-{"name": "Alice"}
-DEL user:100
+GET greeting
+"Hello World"
+
+PUTEX auth:token 300 "jwt-xyz"
 OK
-```
+TTL auth:token
+299
 
-A Python driver (`driver.py`) is also included for programmatic access.
-
----
-
-## 🐳 Docker Deployment
-
-Sider is container-ready and includes a multi-stage `Dockerfile` for building lightweight images.
-
-### Build the Image
-```bash
-docker build -t sider .
-```
-
-### Run the Container
-```bash
-docker run -d -p 4000:4000 --name sider sider
-```
-
-### Persist Data
-To ensure data persists across container restarts, mount a volume:
-```bash
-docker run -d -p 4000:4000 -v $(pwd)/data:/root/data --name sider sider
+CLEAR auth:
+CLEARED 1
 ```
 
 ---
 
-## ☁️ Azure Deployment
+## 💻 Client Libraries & Drivers
 
-You can easily deploy Sider to Azure Container Apps for a serverless experience.
+Sider includes first-class drivers for multiple languages:
 
-### Prerequisites
-- Azure CLI installed and authenticated (`az login`)
-- An Azure Container Registry (ACR) or Docker Hub account
+### 🐍 Python (`py-driver.py`)
 
-### 1. Push Image to Registry
-```bash
-# Tag the image
-docker tag sider <your-registry>.azurecr.io/sider:latest
+```python
+from sider import SiderClient
 
-# Push to ACR
-az acr login --name <your-registry>
-docker push <your-registry>.azurecr.io/sider:latest
+client = SiderClient("localhost", 4000)
+
+# Set with 60-second expiration
+client.put_with_ttl("session:user_42", 60, '{"role": "admin"}')
+
+# Read value
+session = client.get("session:user_42")
+print(f"Session: {session}")
+
+# Check TTL
+ttl = client.ttl("session:user_42")
+print(f"Expires in: {ttl}s")
+
+# Publish event
+client.publish("user-events", "user_42_logged_in")
 ```
 
-### 2. Deploy to Azure Container Apps
+### ☕ Java CLI & Spring Boot (`SiderCLI.java`)
+
+```java
+SiderClient client = new SiderClient("localhost", 4000);
+
+// Key-Value with TTL
+client.putWithTtl("cache:product:99", 600, "{price: 29.99}");
+
+// Pub/Sub Listener
+new Thread(() -> {
+    client.subscribe("order-alerts", message -> {
+        System.out.println("Received order: " + message);
+    }, () -> true);
+}).start();
+
+// Publish
+client.publish("order-alerts", "ORDER_CREATED_#1042");
+```
+
+---
+
+## 🩸 Real-World Application: PulseNode
+
+Sider is the production-grade caching and real-time message bus powering **[PulseNode](https://github.com/AgnibhaRay/PulseNode)**, an emergency blood dispatch and donor matching platform.
+
+- **Unified Layer**: Replaced Redis completely for Spring Boot cache management (`@Cacheable`) and low-latency emergency donor broadcast channels.
+- **Prefix Clearing**: Enables instant invalidation of hospital and donor search caches (`CLEAR pulse-cache-donors-`).
+- **Resilient Pub/Sub**: Connects emergency hospital dispatchers with automatic reconnect loops and zero packet loss.
+
+---
+
+## 🐳 Deployment & Docker
+
+### Run with Docker
+
+```bash
+# Build Docker image
+docker build -t sider:latest .
+
+# Run container with volume persistence
+docker run -d \
+  -p 4000:4000 \
+  -v $(pwd)/data:/root/data \
+  --name sider-db \
+  sider:latest
+```
+
+### Docker Compose
+
+```yaml
+version: '3.8'
+
+services:
+  sider:
+    image: sider:latest
+    build: .
+    ports:
+      - "4000:4000"
+    volumes:
+      - sider-data:/root/data
+    restart: always
+
+volumes:
+  sider-data:
+```
+
+### Azure Container Apps
+
 ```bash
 az containerapp up \
   --name sider-db \
-  --resource-group my-resource-group \
+  --resource-group rg-sider \
   --image <your-registry>.azurecr.io/sider:latest \
   --target-port 4000 \
   --ingress external
 ```
 
-Once deployed, you can connect to your Sider instance using the provided public FQDN on port 443 (TLS termination is handled by Azure).
+---
+
+## 📊 Performance & Complexity
+
+| Operation | Memory Time | Disk Time | Space Complexity |
+| :--- | :--- | :--- | :--- |
+| `PUT` / `PUTEX` | $O(\log N)$ (Skip List) | $O(1)$ (Append WAL) | $O(1)$ per key |
+| `GET` (Cache Hit) | $O(\log N)$ | $O(0)$ (Bypassed) | — |
+| `GET` (Cache Miss) | $O(\log N)$ | $O(1)$ Bloom Filter + $O(\log M)$ SSTable | — |
+| `DEL` | $O(\log N)$ (Tombstone) | $O(1)$ (Append WAL) | Reclaimed in Compaction |
+| `CLEAR` | $O(K)$ matching keys | $O(K)$ Tombstone writes | Reclaimed in Compaction |
+| `PUBLISH` | $O(S)$ subscribers | $O(0)$ (In-Memory) | Zero disk overhead |
 
 ---
 
-## 🔬 Internal Mechanics
+## 🧪 Testing & Verification
 
-### Write Path
-1.  **Log**: The operation is appended to the **WAL** to ensure durability.
-2.  **Insert**: The key-value pair is inserted into the **MemTable** (Skip List).
-3.  **Flush**: When the MemTable exceeds the configured threshold (`MemtableLimit`), it is frozen and flushed to disk as an **SSTable**.
-4.  **Cleanup**: The WAL is truncated, and a new MemTable is initialized.
+Sider maintains a comprehensive Go test suite covering Skip List balancing, Bloom Filter false-positive boundaries, durable TTL transitions, prefix deletion, and concurrent multi-client pub/sub broadcasting:
 
-### Read Path
-1.  **Memory Lookup**: The engine queries the **MemTable**. If found, the value is returned immediately.
-2.  **Disk Lookup**: The engine iterates through **SSTables** in reverse chronological order (newest to oldest).
-    *   **Bloom Filter Check**: Before reading the file, the Bloom Filter is queried. If it returns negative, the file is skipped.
-    *   **File Scan**: If the Bloom Filter returns positive, the SSTable is scanned for the key.
-
-### Deletion Strategy
-Deletions in LSM-Trees are handled via **Tombstones**. A delete operation writes a special marker record. During read operations, a tombstone shadows older versions of the key. Permanent removal of data occurs during the compaction process.
-
-### Compaction Strategy
-Sider implements a manual compaction mechanism that:
-1.  **Merges** all existing SSTables into a single, new SSTable.
-2.  **Dedupes** keys, keeping only the latest version.
-3.  **Purges** tombstones, permanently removing deleted data.
-4.  **Rebuilds** the Bloom Filter for the new compacted file.
-
----
-
-## ⚙️ Configuration & Tuning
-
-Configuration constants are defined in `main.go` and can be adjusted for specific workload requirements.
-
-```go
-const (
-    WALFile         = "sider.wal"     // Path to Write-Ahead Log
-    DataDir         = "data"          // Directory for SSTables
-    MemtableLimit   = 1000            // Threshold for flushing to disk
-    BloomFilterSize = 4096            // Size of Bloom Filter (bytes)
-)
+```bash
+$ go test -v ./...
+=== RUN   TestBloomFilter
+--- PASS: TestBloomFilter (0.00s)
+=== RUN   TestEngineBasicCRUD
+--- PASS: TestEngineBasicCRUD (0.00s)
+=== RUN   TestEngineTTL
+--- PASS: TestEngineTTL (0.14s)
+=== RUN   TestEngineClearPrefix
+--- PASS: TestEngineClearPrefix (0.00s)
+=== RUN   TestBrokerPubSub
+--- PASS: TestBrokerPubSub (0.00s)
+PASS
+ok      sider   0.967s
 ```
-
-| Parameter | Recommendation | Impact |
-|-----------|----------------|--------|
-| `MemtableLimit` | Increase for write-heavy loads | Reduces flush frequency but increases memory usage and recovery time. |
-| `BloomFilterSize` | Increase for large datasets | Reduces false positive rate, improving read performance for non-existent keys. |
-
----
-
-## 📊 Performance Characteristics
-
-| Operation | Time Complexity | Notes |
-|-----------|-----------------|-------|
-| **Put** | $O(\log N)$ | Dominated by Skip List insertion and sequential WAL write. |
-| **Get** | $O(\log N)$ (Mem) + $O(K)$ (Disk) | $K$ is the number of SSTables. Bloom Filters significantly reduce $K$ in practice. |
-| **Delete** | $O(\log N)$ | Identical to Put (writes a Tombstone). |
-| **Space** | $O(N)$ | Linear space complexity. Compaction is required to reclaim space from updates/deletes. |
 
 ---
 
 ## 🗺️ Roadmap
 
-- [x] **Core Engine**: LSM-Tree, WAL, Skip List, SSTables.
-- [x] **Optimization**: Bloom Filters, Tombstone Deletions.
-- [x] **Compaction**: Manual compaction strategy for space reclamation.
-- [ ] **Compression**: Block-level compression (Snappy/Zstd).
-- [ ] **API**: gRPC/HTTP interface for remote access.
-- [ ] **Observability**: Prometheus metrics and structured logging.
+- [x] **LSM-Tree Core Engine**: Skip List MemTable, WAL, and immutable SSTables.
+- [x] **Bloom Filter Optimization**: 1024-byte BitSet with FNV-1a hash reduction.
+- [x] **Durable TTL & Expiration**: Persisted expiration timestamps across crashes and compactions.
+- [x] **Streaming Pub/Sub Broker**: Multi-channel subscription and live event dispatching.
+- [x] **Prefix Namespacing (`CLEAR`)**: Instant batch cache eviction.
+- [ ] **Block-level Compression**: Snappy / Zstandard compression for SSTables on disk.
+- [ ] **Leveled Compaction (LSM Tiering)**: Multi-level LSM hierarchy (Level 0 through Level N).
+- [ ] **Prometheus Metrics Exporter**: Native `:9090/metrics` endpoint for latency and disk stats.
 
 ---
 
-## 🤝 Contribution
+## 🤝 Contributing
 
-Contributions are welcome from the community. Please adhere to the following guidelines:
+Contributions, issues, and feature requests are welcome!
 
-1.  **Fork & Clone**: Create a personal fork of the repository.
-2.  **Branch**: Create a feature branch (`git checkout -b feature/optimization`).
-3.  **Test**: Ensure all existing tests pass and add new tests for your feature.
-4.  **Commit**: Use conventional commit messages.
-5.  **Pull Request**: Submit a detailed PR description.
+1. Fork the Project
+2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the Branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
 
 ---
 
 ## 📄 License
 
-This project is licensed under the **MIT License**. See the [LICENSE](LICENSE) file for details.
-
----
+Distributed under the **MIT License**. See [`LICENSE`](LICENSE) for more information.
 
 <div align="center">
 
-**Engineered by [AgnibhaRay](https://github.com/AgnibhaRay)**
+<br/>
 
-[Report Issue](https://github.com/AgnibhaRay/sider/issues) • [Request Feature](https://github.com/AgnibhaRay/sider/issues)
+Designed & Engineered with ❤️ by **[Agnibha Ray](https://github.com/AgnibhaRay)**
+
+[⭐ Star on GitHub](https://github.com/AgnibhaRay/sider) • [🐛 Report Bug](https://github.com/AgnibhaRay/sider/issues) • [💡 Request Feature](https://github.com/AgnibhaRay/sider/issues)
 
 </div>

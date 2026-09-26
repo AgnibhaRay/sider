@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -30,8 +31,49 @@ const (
 	Probability     = 0.5
 	CmdPut          = byte(0)
 	CmdDel          = byte(1)
+	CmdPutTTL       = byte(2)
 	BloomFilterSize = 1024
 )
+
+// Expiring values are stored as an 8-byte Unix-nanosecond timestamp followed
+// by the original value. This keeps the existing WAL/SSTable record format
+// intact while making TTL state durable across restarts and flushes.
+func encodeExpiringValue(value string, expiresAt time.Time) string {
+	encoded := make([]byte, 8+len(value))
+	binary.LittleEndian.PutUint64(encoded[:8], uint64(expiresAt.UnixNano()))
+	copy(encoded[8:], value)
+	return string(encoded)
+}
+
+func decodeExpiringValue(value string) (string, time.Time, bool) {
+	if len(value) < 8 {
+		return "", time.Time{}, false
+	}
+	expiresAt := time.Unix(0, int64(binary.LittleEndian.Uint64([]byte(value[:8]))))
+	return value[8:], expiresAt, true
+}
+
+func isExpired(kind byte, value string, now time.Time) bool {
+	if kind != CmdPutTTL {
+		return false
+	}
+	_, expiresAt, valid := decodeExpiringValue(value)
+	return !valid || !now.Before(expiresAt)
+}
+
+func visibleValue(value string, kind byte, now time.Time) (string, bool) {
+	if kind == CmdDel || isExpired(kind, value, now) {
+		return "", false
+	}
+	if kind == CmdPutTTL {
+		decoded, _, valid := decodeExpiringValue(value)
+		if !valid {
+			return "", false
+		}
+		return decoded, true
+	}
+	return value, true
+}
 
 // ==========================================
 // MEMTABLE (SKIP LIST IMPLEMENTATION)
@@ -223,6 +265,54 @@ func SearchSSTables(key string) (string, bool, byte) {
 	return "", false, 0
 }
 
+func collectKeysWithPrefixFromFile(path, prefix string, keys map[string]struct{}) {
+	f, err := os.Open(path)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+
+	stat, err := f.Stat()
+	if err != nil || stat.Size() < 8 {
+		return
+	}
+	f.Seek(stat.Size()-8, 0)
+	var limit int64
+	if binary.Read(f, binary.LittleEndian, &limit) != nil || limit < 0 || limit > stat.Size()-8 {
+		return
+	}
+	f.Seek(0, 0)
+	r := bufio.NewReader(f)
+	current := int64(0)
+	for current < limit {
+		_, err := r.ReadByte()
+		if err != nil {
+			return
+		}
+		current++
+		var keyLen, valueLen int32
+		if binary.Read(r, binary.LittleEndian, &keyLen) != nil || binary.Read(r, binary.LittleEndian, &valueLen) != nil {
+			return
+		}
+		current += 8
+		if keyLen < 0 || valueLen < 0 {
+			return
+		}
+		keyBytes := make([]byte, keyLen)
+		valueBytes := make([]byte, valueLen)
+		if _, err := io.ReadFull(r, keyBytes); err != nil {
+			return
+		}
+		if _, err := io.ReadFull(r, valueBytes); err != nil {
+			return
+		}
+		current += int64(keyLen + valueLen)
+		if strings.HasPrefix(string(keyBytes), prefix) {
+			keys[string(keyBytes)] = struct{}{}
+		}
+	}
+}
+
 func searchFile(path, key string) (string, bool, byte) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -276,6 +366,9 @@ func searchFile(path, key string) (string, bool, byte) {
 
 // Simplified compaction: merges all files into one.
 func Compact(e *Engine) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
 	fmt.Println(">> Compaction Started")
 	files, _ := os.ReadDir(DataDir)
 	var paths []string
@@ -288,7 +381,11 @@ func Compact(e *Engine) {
 
 	// In a real DB, we would use K-Way Merge Sort here with iterators.
 	// For this snippet, we load keys into a map to dedup (memory heavy but simple for demo)
-	merged := make(map[string]string)
+	type record struct {
+		value string
+		kind  byte
+	}
+	merged := make(map[string]record)
 
 	// Read oldest to newest
 	for _, p := range paths {
@@ -317,10 +414,11 @@ func Compact(e *Engine) {
 			io.ReadFull(r, v)
 			current += int64(kl + vl)
 
-			if kind == CmdDel {
-				delete(merged, string(k))
+			key := string(k)
+			if kind == CmdDel || isExpired(kind, string(v), time.Now()) {
+				delete(merged, key)
 			} else {
-				merged[string(k)] = string(v)
+				merged[key] = record{value: string(v), kind: kind}
 			}
 		}
 		f.Close()
@@ -332,13 +430,13 @@ func Compact(e *Engine) {
 	bf := NewBloomFilter()
 
 	// Write map to file
-	for k, v := range merged {
+	for k, record := range merged {
 		bf.Add(k)
-		f.Write([]byte{CmdPut})
+		f.Write([]byte{record.kind})
 		binary.Write(f, binary.LittleEndian, int32(len(k)))
-		binary.Write(f, binary.LittleEndian, int32(len(v)))
+		binary.Write(f, binary.LittleEndian, int32(len(record.value)))
 		f.WriteString(k)
-		f.WriteString(v)
+		f.WriteString(record.value)
 	}
 	off, _ := f.Seek(0, io.SeekCurrent)
 	f.Write(bf.BitSet)
@@ -369,11 +467,12 @@ func NewEngine() *Engine {
 	return &Engine{MemTable: sl, Wal: wal}
 }
 
-func (e *Engine) Put(key, value string) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	e.Wal.WriteEntry(key, value, CmdPut)
-	e.MemTable.Put(key, value, CmdPut)
+func (e *Engine) putLocked(key, value string, kind byte) {
+	if err := e.Wal.WriteEntry(key, value, kind); err != nil {
+		log.Printf("WAL write failed for key %q: %v", key, err)
+		return
+	}
+	e.MemTable.Put(key, value, kind)
 	if e.MemTable.Size >= MemtableLimit {
 		fmt.Println(">> MemTable full. Flushing...")
 		FlushMemTable(e.MemTable)
@@ -383,25 +482,177 @@ func (e *Engine) Put(key, value string) {
 	}
 }
 
+func (e *Engine) Put(key, value string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.putLocked(key, value, CmdPut)
+}
+
+func (e *Engine) PutWithTTL(key, value string, ttl time.Duration) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	expiresAt := time.Now().Add(ttl)
+	e.putLocked(key, encodeExpiringValue(value, expiresAt), CmdPutTTL)
+}
+
+func (e *Engine) Delete(key string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.putLocked(key, "", CmdDel)
+}
+
+func (e *Engine) lookupLocked(key string) (string, bool, byte) {
+	if value, found, kind := e.MemTable.Get(key); found {
+		return value, true, kind
+	}
+	return SearchSSTables(key)
+}
+
 func (e *Engine) Get(key string) string {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-	// MemTable
-	if v, found, k := e.MemTable.Get(key); found {
-		if k == CmdDel {
-			return "(nil)"
+	if value, found, kind := e.lookupLocked(key); found {
+		if visible, ok := visibleValue(value, kind, time.Now()); ok {
+			return visible
 		}
-		return v
-	}
-	// SSTables
-	if v, found, k := SearchSSTables(key); found && k == CmdPut {
-		return v
 	}
 	return "(nil)"
 }
 
+func (e *Engine) Expire(key string, ttl time.Duration) bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	value, found, kind := e.lookupLocked(key)
+	current, visible := visibleValue(value, kind, time.Now())
+	if !found || !visible {
+		return false
+	}
+	e.putLocked(key, encodeExpiringValue(current, time.Now().Add(ttl)), CmdPutTTL)
+	return true
+}
+
+func (e *Engine) TTL(key string) int64 {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+
+	value, found, kind := e.lookupLocked(key)
+	if !found || kind == CmdDel || isExpired(kind, value, time.Now()) {
+		return -2
+	}
+	if kind != CmdPutTTL {
+		return -1
+	}
+	_, expiresAt, valid := decodeExpiringValue(value)
+	if !valid {
+		return -2
+	}
+	remaining := int64(time.Until(expiresAt) / time.Second)
+	if remaining < 0 {
+		return -2
+	}
+	return remaining
+}
+
+func (e *Engine) ClearPrefix(prefix string) int {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	keys := make(map[string]struct{})
+	for _, node := range e.MemTable.Iterator() {
+		if strings.HasPrefix(node.Key, prefix) {
+			keys[node.Key] = struct{}{}
+		}
+	}
+	if files, err := os.ReadDir(DataDir); err == nil {
+		for _, file := range files {
+			if strings.HasSuffix(file.Name(), ".db") {
+				collectKeysWithPrefixFromFile(filepath.Join(DataDir, file.Name()), prefix, keys)
+			}
+		}
+	}
+
+	for key := range keys {
+		e.putLocked(key, "", CmdDel)
+	}
+	return len(keys)
+}
+
+type Client struct {
+	conn    net.Conn
+	writeMu sync.Mutex
+}
+
+func (c *Client) writeLine(line string) error {
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+	_, err := c.conn.Write([]byte(line + "\n"))
+	return err
+}
+
+type Broker struct {
+	mu       sync.RWMutex
+	channels map[string]map[*Client]struct{}
+}
+
+func NewBroker() *Broker {
+	return &Broker{channels: make(map[string]map[*Client]struct{})}
+}
+
+func (b *Broker) Subscribe(client *Client, channel string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.channels[channel] == nil {
+		b.channels[channel] = make(map[*Client]struct{})
+	}
+	b.channels[channel][client] = struct{}{}
+}
+
+func (b *Broker) Unsubscribe(client *Client, channel string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if subscribers, ok := b.channels[channel]; ok {
+		delete(subscribers, client)
+		if len(subscribers) == 0 {
+			delete(b.channels, channel)
+		}
+	}
+}
+
+func (b *Broker) RemoveClient(client *Client) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for channel, subscribers := range b.channels {
+		delete(subscribers, client)
+		if len(subscribers) == 0 {
+			delete(b.channels, channel)
+		}
+	}
+}
+
+func (b *Broker) Publish(channel, message string) int {
+	b.mu.RLock()
+	subscribers := make([]*Client, 0, len(b.channels[channel]))
+	for client := range b.channels[channel] {
+		subscribers = append(subscribers, client)
+	}
+	b.mu.RUnlock()
+
+	delivered := 0
+	for _, client := range subscribers {
+		if err := client.writeLine("MESSAGE " + channel + " " + message); err != nil {
+			b.RemoveClient(client)
+			continue
+		}
+		delivered++
+	}
+	return delivered
+}
+
 func handleConnection(conn net.Conn, e *Engine) {
 	defer conn.Close()
+	client := &Client{conn: conn}
+	defer broker.RemoveClient(client)
 	reader := bufio.NewReader(conn)
 
 	for {
@@ -413,7 +664,7 @@ func handleConnection(conn net.Conn, e *Engine) {
 
 		line = strings.TrimSpace(line)
 		parts := strings.SplitN(line, " ", 3)
-		if len(parts) == 0 {
+		if len(parts) == 0 || parts[0] == "" {
 			continue
 		}
 
@@ -422,40 +673,107 @@ func handleConnection(conn net.Conn, e *Engine) {
 		switch cmd {
 		case "PUT":
 			if len(parts) < 3 {
-				conn.Write([]byte("ERR Usage: PUT <key> <val>\n"))
+				client.writeLine("ERR Usage: PUT <key> <val>")
 				continue
 			}
 			e.Put(parts[1], parts[2])
-			conn.Write([]byte("OK\n"))
+			client.writeLine("OK")
+
+		case "PUTEX":
+			putParts := strings.SplitN(line, " ", 4)
+			if len(putParts) < 4 {
+				client.writeLine("ERR Usage: PUTEX <key> <ttl-seconds> <val>")
+				continue
+			}
+			seconds, err := strconv.ParseInt(putParts[2], 10, 64)
+			if err != nil || seconds <= 0 {
+				client.writeLine("ERR TTL must be a positive integer")
+				continue
+			}
+			e.PutWithTTL(putParts[1], putParts[3], time.Duration(seconds)*time.Second)
+			client.writeLine("OK")
 
 		case "GET":
 			if len(parts) < 2 {
-				conn.Write([]byte("ERR Usage: GET <key>\n"))
+				client.writeLine("ERR Usage: GET <key>")
 				continue
 			}
 			val := e.Get(parts[1])
-			conn.Write([]byte(val + "\n"))
+			client.writeLine(val)
 
 		case "DEL":
 			if len(parts) < 2 {
-				conn.Write([]byte("ERR Usage: DEL <key>\n"))
+				client.writeLine("ERR Usage: DEL <key>")
 				continue
 			}
-			e.mu.Lock()
-			e.Wal.WriteEntry(parts[1], "", CmdDel)
-			e.MemTable.Put(parts[1], "", CmdDel)
-			e.mu.Unlock()
-			conn.Write([]byte("OK\n"))
+			e.Delete(parts[1])
+			client.writeLine("OK")
+
+		case "EXPIRE":
+			if len(parts) < 3 {
+				client.writeLine("ERR Usage: EXPIRE <key> <ttl-seconds>")
+				continue
+			}
+			seconds, err := strconv.ParseInt(parts[2], 10, 64)
+			if err != nil || seconds <= 0 {
+				client.writeLine("ERR TTL must be a positive integer")
+				continue
+			}
+			if e.Expire(parts[1], time.Duration(seconds)*time.Second) {
+				client.writeLine("1")
+			} else {
+				client.writeLine("0")
+			}
+
+		case "TTL":
+			if len(parts) < 2 {
+				client.writeLine("ERR Usage: TTL <key>")
+				continue
+			}
+			client.writeLine(strconv.FormatInt(e.TTL(parts[1]), 10))
+
+		case "CLEAR":
+			if len(parts) < 2 {
+				client.writeLine("ERR Usage: CLEAR <key-prefix>")
+				continue
+			}
+			client.writeLine("CLEARED " + strconv.Itoa(e.ClearPrefix(parts[1])))
+
+		case "SUBSCRIBE":
+			if len(parts) < 2 {
+				client.writeLine("ERR Usage: SUBSCRIBE <channel>")
+				continue
+			}
+			broker.Subscribe(client, parts[1])
+			client.writeLine("SUBSCRIBED " + parts[1])
+
+		case "UNSUBSCRIBE":
+			if len(parts) < 2 {
+				client.writeLine("ERR Usage: UNSUBSCRIBE <channel>")
+				continue
+			}
+			broker.Unsubscribe(client, parts[1])
+			client.writeLine("UNSUBSCRIBED " + parts[1])
+
+		case "PUBLISH":
+			if len(parts) < 3 {
+				client.writeLine("ERR Usage: PUBLISH <channel> <message>")
+				continue
+			}
+			delivered := broker.Publish(parts[1], parts[2])
+			client.writeLine("PUBLISHED " + strconv.Itoa(delivered))
 
 		case "COMPACT":
 			go Compact(e) // Run in background
-			conn.Write([]byte("OK Compact Started\n"))
+			client.writeLine("OK Compact Started")
 
 		default:
-			conn.Write([]byte("ERR Unknown Command\n"))
+			client.writeLine("ERR Unknown Command")
 		}
 	}
 }
+
+var broker = NewBroker()
 
 func main() {
 	rand.Seed(time.Now().UnixNano())
