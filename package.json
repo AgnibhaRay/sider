@@ -1,0 +1,11 @@
+{
+  "name": "sider-project",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Sider v2 — Ultra-Fast LSM-Tree Persistent Key-Value Store & Real-Time Engine",
+  "scripts": {
+    "dev": "npm --prefix web run dev",
+    "build": "npm --prefix web run build",
+    "start": "npm --prefix web run start"
+  }
+}
