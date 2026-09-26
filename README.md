@@ -1,4 +1,6 @@
-# <p align="center"><img src="https://raw.githubusercontent.com/AgnibhaRay/sider/main/.github/assets/sider-banner.png" alt="SIDER DB" width="100%" onerror="this.style.display='none'" /></p>
+<p align="center">
+  <img src=".github/assets/logo.png" alt="SIDER DB Logo" width="550" style="border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.5);" />
+</p>
 
 <div align="center">
 
