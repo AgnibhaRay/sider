@@ -1,142 +1,271 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useMemo } from "react";
 import * as THREE from "three";
 
 export type FlowType = "write" | "read" | "compact" | "pubsub";
 
 interface NodeInfo {
   id: string;
+  tag: string;
   name: string;
   tier: string;
+  badge: string;
+  accentColor: string;
   complexity: string;
+  pos: [number, number, number];
   summary: string;
   details: string[];
   codeSnippet: string;
+  telemetry: { label: string; val: string }[];
 }
 
 const ARCHITECTURE_NODES: Record<string, NodeInfo> = {
   client: {
     id: "client",
-    name: "Client Ingestion Gateway",
+    tag: "01",
+    name: "TCP Client Gateway",
     tier: "Network Layer",
-    complexity: "O(1) TCP Socket Framing",
-    summary: "Handles high-concurrency client connections over TCP (port 4000) using custom line-delimited ASCII protocol with zero-copy stream parsing.",
+    badge: "PORT :4000",
+    accentColor: "#38bdf8", // Electric Sky Blue
+    complexity: "O(1) Socket Stream Framing",
+    pos: [-7, 1.8, 0],
+    summary: "High-concurrency connection pool handling TCP client streams with custom line-delimited ASCII protocol and zero-copy command parsing.",
     details: [
-      "Non-blocking TCP socket pool with connection keep-alive",
-      "Native support for Netcat, Python, Java Spring Boot & Go drivers",
-      "Multiplexed command parser routing KV operations vs Pub/Sub channels"
+      "Multiplexed goroutine-per-client event dispatching",
+      "Native compatibility with Netcat, Python, Java Spring Boot & Go",
+      "Sub-microsecond command tokenization & buffer pooling"
     ],
-    codeSnippet: "conn, err := listener.Accept()\ngo handleConnection(conn, engine, broker)"
+    codeSnippet: `func handleConnection(conn net.Conn, engine *Engine) {
+    reader := bufio.NewReader(conn)
+    for {
+        line, err := reader.ReadString('\\n')
+        cmd, args := parseCommand(line)
+        resp := engine.Execute(cmd, args)
+        conn.Write([]byte(resp + "\\n"))
+    }
+}`,
+    telemetry: [
+      { label: "CONNECTED CLIENTS", val: "1,248 active" },
+      { label: "PROTOCOL", val: "ASCII Line / TCP" },
+      { label: "AVG PARSE TIME", val: "85 ns" }
+    ]
   },
   wal: {
     id: "wal",
+    tag: "02",
     name: "Write-Ahead Log (WAL)",
-    tier: "Tier 01 • Durability",
+    tier: "Durability Tier",
+    badge: "sider.wal",
+    accentColor: "#f59e0b", // Radiant Amber
     complexity: "O(1) Sequential Disk Append",
-    summary: "Synchronous append-only binary log. Every write is guaranteed to disk before in-memory acknowledgment, surviving unexpected crashes and power failures.",
+    pos: [-2.5, 3.8, -3.5],
+    summary: "Synchronous append-only binary log with 8-byte TTL timestamps. Guarantees zero data loss across unannounced crashes and power cuts.",
     details: [
-      "Sequential binary records with 8-byte nanosecond TTL timestamps",
-      "Instantaneous replay upon engine restart in sub-100ms",
-      "Auto-rotated and truncated upon successful SSTable flush"
+      "Binary encoded [OpCode | KeyLen | Key | ValLen | Val | ExpireNano | CRC32]",
+      "Fsync frequency optimized for sub-millisecond append latency",
+      "Instant crash replay into SkipList MemTable upon node startup"
     ],
-    codeSnippet: "wal.WriteRecord(OpPutEx, key, val, expireNano)\nwal.Sync()"
+    codeSnippet: `func (w *WAL) Append(op byte, key, val string, expireAt int64) error {
+    w.mu.Lock()
+    defer w.mu.Unlock()
+    binary.Write(w.buf, binary.BigEndian, expireAt)
+    w.buf.WriteString(key)
+    w.buf.WriteString(val)
+    return w.file.Sync()
+}`,
+    telemetry: [
+      { label: "SYNC MODE", val: "Synchronous WAL" },
+      { label: "APPEND LATENCY", val: "0.12 ms" },
+      { label: "RECOVERY TIME", val: "< 45 ms" }
+    ]
   },
   memtable: {
     id: "memtable",
+    tag: "03",
     name: "SkipList MemTable",
-    tier: "Tier 02 • Fast RAM",
+    tier: "In-Memory Tier",
+    badge: "LOCK-FREE RAM",
+    accentColor: "#10b981", // Emerald Green
     complexity: "O(log N) Search & Insert",
-    summary: "Probabilistic multi-tier linked list holding active keys in RAM. Provides predictable logarithmic reads and writes without heavy mutex contention or B-Tree rebalancing.",
+    pos: [0, 2.2, 1.2],
+    summary: "Probabilistic multi-level linked list holding active keys in RAM. Delivers logarithmic reads and writes without heavy mutex contention or B-Tree rebalancing.",
     details: [
-      "Dynamic probabilistic level generation (p=0.5, MaxLevel=16)",
-      "Supports range scans and prefix iteration directly from memory",
-      "Triggers immutable flush when reaching configured threshold (e.g. 64KB - 4MB)"
+      "Probabilistic geometric level distribution (p=0.5, MaxLevel=16)",
+      "Supports range queries and instantaneous prefix iteration in RAM",
+      "Freezes and flushes immutable SSTable when reaching capacity limit"
     ],
-    codeSnippet: "node := memtable.Insert(key, value, expireAt)\nif memtable.ByteSize() > threshold { s.Flush() }"
+    codeSnippet: `func (s *SkipList) Insert(key, val string, expireAt int64) {
+    update := make([]*Node, MaxLevel)
+    curr := s.header
+    for i := s.level - 1; i >= 0; i-- {
+        for curr.forward[i] != nil && curr.forward[i].key < key {
+            curr = curr.forward[i]
+        }
+        update[i] = curr
+    }
+    // O(log N) node link insertion
+}`,
+    telemetry: [
+      { label: "MEMTABLE SIZE", val: "1.2 MB / 4.0 MB" },
+      { label: "SKIPLIST LEVELS", val: "8 Active" },
+      { label: "RAM SEARCH", val: "420 ns" }
+    ]
   },
   bloom: {
     id: "bloom",
+    tag: "04",
     name: "FNV-1a Bloom Filter",
-    tier: "Tier 03 • Disk I/O Guard",
-    complexity: "O(k) Hash Evaluations (~100ns)",
-    summary: "In-memory BitSet guard that intercepts read operations before touching physical disk. Guarantees 90%+ disk read skip for non-existent or stale keys.",
+    tier: "Disk I/O Shield",
+    badge: "98.4% SKIP RATE",
+    accentColor: "#06b6d4", // Electric Cyan
+    complexity: "O(k) Hashes (~90ns)",
+    pos: [4.2, 0.8, -3.2],
+    summary: "Compact 1024-byte in-memory BitSet embedded in each SSTable header. Catches non-existent keys in sub-microsecond time, bypassing physical disk I/O.",
     details: [
-      "1024-byte compact BitSet embedded in each SSTable header",
-      "Dual FNV-1a hash salt algorithms with near-zero false-positive rates",
-      "Completely eliminates costly random disk seeks on cache misses"
+      "1024-byte BitSet with 3 independent FNV-1a hash functions",
+      "Evaluates key presence before initiating any disk block seeks",
+      "Guarantees zero false negatives and < 1.2% false positives"
     ],
-    codeSnippet: "if !sstable.BloomFilter.MayContain(key) {\n    return nil, ErrNotFound // Skipped physical disk seek!\n}"
+    codeSnippet: `func (bf *BloomFilter) MayContain(key string) bool {
+    h1 := fnv1a(key)
+    h2 := fnv1aWithSeed(key, 0x5bd1e995)
+    for i := 0; i < 3; i++ {
+        idx := (h1 + uint32(i)*h2) % uint32(len(bf.bits)*8)
+        if (bf.bits[idx/8] & (1 << (idx%8))) == 0 {
+            return false // Definitely NOT on disk!
+        }
+    }
+    return true
+}`,
+    telemetry: [
+      { label: "BITSET SIZE", val: "1,024 Bytes" },
+      { label: "FALSE POSITIVE", val: "< 1.2%" },
+      { label: "DISK IO SAVED", val: "98.4%" }
+    ]
   },
   sstable: {
     id: "sstable",
+    tag: "05",
     name: "Immutable SSTables",
-    tier: "Tier 04 • Disk Storage",
-    complexity: "O(log M) Binary Search over Sparse Blocks",
-    summary: "Sorted String Tables persisted as immutable .db files on disk. Sorted keys allow efficient binary search and contiguous block sequential reading.",
+    tier: "Storage Tier",
+    badge: "PERSISTENT DISK",
+    accentColor: "#a855f7", // Holographic Violet
+    complexity: "O(log M) Binary Search",
+    pos: [6.5, -1.2, 2],
+    summary: "Sorted String Tables written as immutable .db files on disk. Sorted order allows binary searching sparse index blocks with high sequential disk read throughput.",
     details: [
-      "Immutable disk layout prevents file corruption and lock contention",
-      "Sparse index blocks load into RAM for rapid offset location",
-      "Reverse chronological search (L0 newest to oldest)"
+      "Zero lock contention: SSTables are strictly immutable once written",
+      "Embedded sparse index blocks cached in RAM for rapid block locating",
+      "Reverse chronological search (L0 newest to oldest tables)"
     ],
-    codeSnippet: "offset := sstable.SearchIndex(key)\nrecord := sstable.ReadBlockAt(offset)"
+    codeSnippet: `func (s *SSTable) Get(key string) (string, bool) {
+    if !s.bloom.MayContain(key) { return "", false }
+    blockOffset := s.searchSparseIndex(key)
+    return s.readFromBlock(blockOffset, key)
+}`,
+    telemetry: [
+      { label: "SSTABLES ON DISK", val: "3 Active (.db)" },
+      { label: "INDEX TYPE", val: "Sparse Key Index" },
+      { label: "READ LATENCY", val: "0.45 ms" }
+    ]
   },
   compactor: {
     id: "compactor",
-    name: "K-Way Merge Compactor",
-    tier: "Tier 05 • Space Reclamation",
+    tag: "06",
+    name: "K-Way Compactor",
+    tier: "Engine Core",
+    badge: "BACKGROUND WORKER",
+    accentColor: "#ec4899", // Neon Rose
     complexity: "O(N log K) Multi-Way Merge",
-    summary: "Background asynchronous compactor that merges multiple SSTables, purges expired TTL entries and tombstoned keys, and creates a consolidated storage table.",
+    pos: [1.8, -2.4, 4.2],
+    summary: "Asynchronous background engine that merges overlapping SSTables, purges tombstones from DEL operations, cleans expired TTL keys, and frees disk space.",
     details: [
-      "Zero-downtime asynchronous background compaction routine",
-      "Purges tombstoned records deleted with DEL or expired via TTL",
-      "Recovers 100% of deleted disk space and reconstructs unified Bloom filters"
+      "Zero-downtime background routine runs without blocking live queries",
+      "Reclaims 100% of fragmented and deleted storage space",
+      "Reconstructs unified Bloom filters for newly consolidated SSTables"
     ],
-    codeSnippet: "go s.compactTables([]string{table0, table1})\n// Merged table ready, old tables unlinked"
+    codeSnippet: `func (e *Engine) TriggerCompaction() {
+    go func() {
+        mergedTable := e.kWayMerge(e.tables)
+        e.atomicReplaceTables(mergedTable)
+        e.unlinkOldTables()
+    }()
+}`,
+    telemetry: [
+      { label: "PURGE RATE", val: "100% Tombstones" },
+      { label: "IO STRATEGY", val: "Rate-limited Sequential" },
+      { label: "STATUS", val: "Idle / Ready" }
+    ]
   },
   pubsub: {
     id: "pubsub",
-    name: "Streaming Pub/Sub Broker",
-    tier: "Real-Time Bus",
-    complexity: "O(S) Fan-out to S Subscribers",
-    summary: "Thread-safe event streaming hub multiplexed within the Sider engine. Allows distributed clients to publish and subscribe to real-time event topics.",
+    tag: "07",
+    name: "Pub/Sub Streaming Hub",
+    tier: "Real-Time Layer",
+    badge: "FAN-OUT BUS",
+    accentColor: "#eab308", // Sun Gold
+    complexity: "O(S) Active Subscribers",
+    pos: [-4.2, -1.6, 3.2],
+    summary: "Multiplexed thread-safe message broker integrated directly into the database engine. Delivers real-time pub/sub notifications over open TCP sockets.",
     details: [
-      "Zero-copy broadcast loop over active client TCP socket streams",
-      "Dynamic channel creation with instant subscriber fan-out",
-      "Powers real-time alerts, hospital emergency dispatch, and cache sync"
+      "Lock-free channel multiplexing over active subscriber TCP connections",
+      "Zero serialization overhead for low-latency broadcast dispatching",
+      "Powers real-time alerts, hospital emergency dispatch, and live cache sync"
     ],
-    codeSnippet: "broker.Publish(channel, payload)\n// Broadcast to all active TCP listener streams"
+    codeSnippet: `func (b *Broker) Publish(channel, message string) int {
+    b.mu.RLock()
+    defer b.mu.RUnlock()
+    subs := b.channels[channel]
+    for _, client := range subs {
+        client.Send("MESSAGE " + channel + " " + message)
+    }
+    return len(subs)
+}`,
+    telemetry: [
+      { label: "CHANNELS", val: "38 Active" },
+      { label: "FAN-OUT SPEED", val: "< 0.05 ms" },
+      { label: "OVERHEAD", val: "Zero Disk I/O" }
+    ]
   }
 };
 
 export function ThreeArchitectureVisualizer() {
   const containerRef = useRef<HTMLDivElement>(null);
   const [activeFlow, setActiveFlow] = useState<FlowType>("write");
-  const [selectedNode, setSelectedNode] = useState<NodeInfo>(ARCHITECTURE_NODES.memtable);
+  const [selectedNodeId, setSelectedNodeId] = useState<string>("memtable");
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
-  const [isRotating, setIsRotating] = useState(true);
+  const [isAutoOrbit, setIsAutoOrbit] = useState<boolean>(true);
+  const [screenCoords, setScreenCoords] = useState<Record<string, { x: number; y: number; visible: boolean }>>({});
+  const [pulseTrigger, setPulseTrigger] = useState<number>(0);
 
-  // Flow explanation text
-  const flowDescriptions: Record<FlowType, { title: string; subtitle: string; path: string }> = {
+  const selectedNode = ARCHITECTURE_NODES[selectedNodeId] || ARCHITECTURE_NODES.memtable;
+
+  // Flow explanations
+  const flowDescriptions: Record<FlowType, { title: string; subtitle: string; path: string; color: string }> = {
     write: {
-      title: "WRITE PIPELINE (PUT / PUTEX)",
-      subtitle: "Sequential WAL durability + Concurrent SkipList MemTable ingestion",
-      path: "Client TCP  ──►  Router  ──►  WAL (Disk Append)  &  MemTable (RAM O(log N))"
+      title: "WRITE INGESTION PIPELINE",
+      subtitle: "Synchronous binary WAL persistence + Concurrent SkipList MemTable RAM insertion",
+      path: "TCP Client  ──►  WAL Append (Disk)  &  SkipList MemTable (RAM O(log N))",
+      color: "#f59e0b"
     },
     read: {
-      title: "READ PIPELINE (GET)",
-      subtitle: "Hierarchical memory check with Bloom Filter disk skip acceleration",
-      path: "Client TCP  ──►  MemTable (Hit)  │ (Miss) ──►  Bloom Filter  ──►  SSTables"
+      title: "READ HIERARCHY PIPELINE",
+      subtitle: "Instant RAM cache hit or Bloom Filter bitset check before touching disk",
+      path: "TCP Client  ──►  MemTable (Hit)  │ (Miss) ──►  Bloom Filter (98% Skip)  ──►  SSTable",
+      color: "#06b6d4"
     },
     compact: {
       title: "FLUSH & COMPACTION LIFECYCLE",
-      subtitle: "MemTable freeze to SSTable + K-Way merge tombstone purge",
-      path: "MemTable (Full)  ──►  Flush Immutable SSTable  ──►  K-Way Merge Compactor"
+      subtitle: "MemTable freezes into immutable SSTable; K-Way compactor cleans tombstones",
+      path: "MemTable Full  ──►  Freeze & Flush SSTable  ──►  K-Way Merge & Purge",
+      color: "#a855f7"
     },
     pubsub: {
-      title: "STREAMING PUB/SUB BROADCAST",
-      subtitle: "Non-blocking multiplexed TCP event distribution",
-      path: "Publisher TCP  ──►  Engine Broker  ──►  Subscribers 1, 2, 3... (Broadcast)"
+      title: "REAL-TIME STREAMING PUB/SUB",
+      subtitle: "Multiplexed non-blocking TCP socket broadcast to active subscriber streams",
+      path: "Publisher TCP  ──►  Engine Broker  ──►  Subscribers 1, 2, 3... (Instant Broadcast)",
+      color: "#eab308"
     }
   };
 
@@ -144,366 +273,421 @@ export function ThreeArchitectureVisualizer() {
     const container = containerRef.current;
     if (!container) return;
 
-    // Scene, Camera, Renderer
+    // Scene setup
     const scene = new THREE.Scene();
-    scene.background = null; // transparent to inherit putty paper
+    scene.fog = new THREE.FogExp2(0x09090b, 0.025);
 
-    const width = container.clientWidth || 900;
-    const height = container.clientHeight || 550;
+    const width = container.clientWidth || 960;
+    const height = container.clientHeight || 600;
 
-    const camera = new THREE.PerspectiveCamera(40, width / height, 0.1, 1000);
-    camera.position.set(13, 10, 16);
-    camera.lookAt(0, 0, 0);
+    const camera = new THREE.PerspectiveCamera(42, width / height, 0.1, 1000);
+    // Camera coordinates for crisp isometric projection
+    const targetCameraPos = new THREE.Vector3(14, 11, 17);
+    camera.position.copy(targetCameraPos);
+    camera.lookAt(0, 0.5, 0);
 
     const renderer = new THREE.WebGLRenderer({
       antialias: true,
-      alpha: true,
+      alpha: false,
       powerPreference: "high-performance"
     });
+    renderer.setClearColor(0x09090b, 1);
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    renderer.shadowMap.enabled = false;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.1;
     container.appendChild(renderer.domElement);
 
-    // Subtle Lighting (architectural aesthetic: crisp ink & bone contrast)
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.95);
-    scene.add(ambientLight);
-
-    const dirLight1 = new THREE.DirectionalLight(0xffffff, 1.2);
-    dirLight1.position.set(15, 25, 20);
-    scene.add(dirLight1);
-
-    const dirLight2 = new THREE.DirectionalLight(0xc4c3b6, 0.8);
-    dirLight2.position.set(-15, -10, -15);
-    scene.add(dirLight2);
-
-    // Architectural Ground Grid on Putty Paper
-    const gridHelper = new THREE.GridHelper(26, 26, 0x808080, 0xdfdcd5);
+    // -----------------------------------------------------------------
+    // High-Tech Architectural Floor Grid & Coordinate Rings
+    // -----------------------------------------------------------------
+    const gridHelper = new THREE.GridHelper(32, 32, 0x27273a, 0x14141e);
     gridHelper.position.y = -3.5;
     scene.add(gridHelper);
 
-    // Materials Palette (Renaissance / Putty Paper / Ink / Bone)
-    const inkColor = 0x000000;
-    const boneColor = 0xe7e5e4;
-    const puttyDark = 0x595855;
-    const goldAccent = 0xb48a4d;
-    const activeColor = 0x1f1e1c;
+    // Concentric Radar Coordinate Circles on floor
+    [6, 12, 18].forEach((radius) => {
+      const ringGeom = new THREE.RingGeometry(radius - 0.03, radius + 0.03, 64);
+      const ringMat = new THREE.MeshBasicMaterial({
+        color: 0x1e1e2d,
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0.6
+      });
+      const ringMesh = new THREE.Mesh(ringGeom, ringMat);
+      ringMesh.rotation.x = Math.PI / 2;
+      ringMesh.position.y = -3.49;
+      scene.add(ringMesh);
+    });
 
-    const nodeMeshes: { id: string; mesh: THREE.Object3D }[] = [];
-    const interactiveObjects: THREE.Object3D[] = [];
+    // -----------------------------------------------------------------
+    // Atmospheric & Architectural Lighting
+    // -----------------------------------------------------------------
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+    scene.add(ambientLight);
 
-    // Helper: Create an architectural framed box
-    const createFramedBox = (
+    const mainLight = new THREE.DirectionalLight(0xffffff, 1.4);
+    mainLight.position.set(12, 22, 16);
+    scene.add(mainLight);
+
+    const blueBacklight = new THREE.DirectionalLight(0x38bdf8, 0.8);
+    blueBacklight.position.set(-16, 12, -14);
+    scene.add(blueBacklight);
+
+    const goldFill = new THREE.PointLight(0xf59e0b, 1.8, 25);
+    goldFill.position.set(0, 4, 0);
+    scene.add(goldFill);
+
+    // -----------------------------------------------------------------
+    // 3D Architectural Component Assemblies
+    // -----------------------------------------------------------------
+    const interactiveMeshes: THREE.Object3D[] = [];
+    const nodeGroups: Record<string, THREE.Group> = {};
+
+    // Helper: Create glassmorphic obsidian box with glowing neon edges
+    const createObsidianNode = (
       w: number,
       h: number,
       d: number,
-      fillColor: number,
-      opacity = 0.9,
-      wireColor = inkColor
+      neonHex: number,
+      nodeId: string,
+      opacity = 0.85
     ) => {
       const group = new THREE.Group();
       const geom = new THREE.BoxGeometry(w, h, d);
-      const mat = new THREE.MeshStandardMaterial({
-        color: fillColor,
-        roughness: 0.35,
-        metalness: 0.1,
-        transparent: opacity < 1,
-        opacity: opacity
+
+      // Glass core
+      const mat = new THREE.MeshPhysicalMaterial({
+        color: 0x121218,
+        roughness: 0.15,
+        metalness: 0.2,
+        transmission: 0.6,
+        transparent: true,
+        opacity: opacity,
+        clearcoat: 1.0,
+        clearcoatRoughness: 0.1
       });
       const mesh = new THREE.Mesh(geom, mat);
+      mesh.userData = { nodeId };
       group.add(mesh);
+      interactiveMeshes.push(mesh);
 
+      // Glowing Wireframe Edges
       const edges = new THREE.EdgesGeometry(geom);
-      const line = new THREE.LineSegments(
-        edges,
-        new THREE.LineBasicMaterial({ color: wireColor, linewidth: 1.5 })
-      );
-      group.add(line);
+      const edgeMat = new THREE.LineBasicMaterial({
+        color: neonHex,
+        linewidth: 2,
+        transparent: true,
+        opacity: 0.95
+      });
+      const edgeLine = new THREE.LineSegments(edges, edgeMat);
+      group.add(edgeLine);
 
-      return { group, mesh, mat };
+      // Bottom glowing platform glow ring
+      const platGeom = new THREE.PlaneGeometry(w * 1.3, d * 1.3);
+      const platMat = new THREE.MeshBasicMaterial({
+        color: neonHex,
+        transparent: true,
+        opacity: 0.12,
+        side: THREE.DoubleSide
+      });
+      const platMesh = new THREE.Mesh(platGeom, platMat);
+      platMesh.rotation.x = Math.PI / 2;
+      platMesh.position.y = -h / 2 - 0.05;
+      group.add(platMesh);
+
+      return { group, mesh, edgeLine };
     };
 
-    // 1. Client Gateway (Left Emitter)
-    const clientGroup = new THREE.Group();
-    clientGroup.position.set(-8, 1.5, 0);
-    {
-      const { group: base, mesh } = createFramedBox(2, 2.2, 2, boneColor, 0.95, inkColor);
-      clientGroup.add(base);
-      mesh.userData = { nodeId: "client" };
-      interactiveObjects.push(mesh);
+    // 1. Client Gateway (01)
+    const clientNode = createObsidianNode(2.2, 2.2, 2.2, 0x38bdf8, "client");
+    clientNode.group.position.set(-7, 1.8, 0);
+    scene.add(clientNode.group);
+    nodeGroups["client"] = clientNode.group;
 
-      // Compass Ring around client
-      const ringGeom = new THREE.RingGeometry(1.6, 1.7, 32);
-      const ringMat = new THREE.MeshBasicMaterial({ color: inkColor, side: THREE.DoubleSide });
-      const ringMesh = new THREE.Mesh(ringGeom, ringMat);
-      ringMesh.rotation.x = Math.PI / 2;
-      ringMesh.position.y = -1;
-      clientGroup.add(ringMesh);
-    }
-    scene.add(clientGroup);
-    nodeMeshes.push({ id: "client", mesh: clientGroup });
+    // Glowing core crystal inside client
+    const clientCore = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.7, 0),
+      new THREE.MeshStandardMaterial({
+        color: 0x38bdf8,
+        emissive: 0x38bdf8,
+        emissiveIntensity: 0.8,
+        roughness: 0.2
+      })
+    );
+    clientNode.group.add(clientCore);
 
-    // 2. WAL (Write-Ahead Log Cylinder / Tape)
+    // 2. WAL Log Cylinder (02)
     const walGroup = new THREE.Group();
-    walGroup.position.set(-2.5, 3.2, -4);
+    walGroup.position.set(-2.5, 3.8, -3.5);
     {
-      const cylGeom = new THREE.CylinderGeometry(1.4, 1.4, 3, 24, 4);
-      const cylMat = new THREE.MeshStandardMaterial({
-        color: 0xdfdcd5,
-        roughness: 0.25,
-        metalness: 0.3,
+      const cylGeom = new THREE.CylinderGeometry(1.3, 1.3, 3.2, 32);
+      const cylMat = new THREE.MeshPhysicalMaterial({
+        color: 0x16120e,
+        roughness: 0.2,
+        transmission: 0.7,
         transparent: true,
-        opacity: 0.88
+        opacity: 0.85,
+        clearcoat: 1.0
       });
       const cylMesh = new THREE.Mesh(cylGeom, cylMat);
       cylMesh.userData = { nodeId: "wal" };
-      interactiveObjects.push(cylMesh);
       walGroup.add(cylMesh);
+      interactiveMeshes.push(cylMesh);
 
       const cylEdges = new THREE.EdgesGeometry(cylGeom);
-      const cylLine = new THREE.LineSegments(
+      const cylLines = new THREE.LineSegments(
         cylEdges,
-        new THREE.LineBasicMaterial({ color: inkColor })
+        new THREE.LineBasicMaterial({ color: 0xf59e0b, transparent: true, opacity: 0.95 })
       );
-      walGroup.add(cylLine);
+      walGroup.add(cylLines);
 
-      // Rings on WAL cylinder (representing committed binary records)
-      for (let i = -1; i <= 1; i += 0.8) {
-        const discGeom = new THREE.TorusGeometry(1.42, 0.03, 8, 24);
-        const discMat = new THREE.MeshBasicMaterial({ color: goldAccent });
-        const discMesh = new THREE.Mesh(discGeom, discMat);
-        discMesh.rotation.x = Math.PI / 2;
-        discMesh.position.y = i;
-        walGroup.add(discMesh);
+      // Rotating Amber Record Rings
+      for (let i = -1.1; i <= 1.1; i += 0.55) {
+        const ring = new THREE.Mesh(
+          new THREE.TorusGeometry(1.32, 0.03, 8, 32),
+          new THREE.MeshBasicMaterial({ color: 0xf59e0b })
+        );
+        ring.rotation.x = Math.PI / 2;
+        ring.position.y = i;
+        walGroup.add(ring);
       }
     }
     scene.add(walGroup);
-    nodeMeshes.push({ id: "wal", mesh: walGroup });
+    nodeGroups["wal"] = walGroup;
 
-    // 3. SkipList MemTable (Tiered Isometric Stepped Glass Slabs)
+    // 3. SkipList MemTable (03) - 3 Stepped Holographic Emerald Slabs
     const memtableGroup = new THREE.Group();
-    memtableGroup.position.set(0, 1.8, 1);
+    memtableGroup.position.set(0, 2.2, 1.2);
     {
-      // 3 Layers representing SkipList Levels
-      const slabHeights = [0.25, 0.25, 0.25];
-      const slabSizes = [4.2, 3.2, 2.2];
-      const yOffsets = [-0.6, 0.1, 0.8];
+      const sizes = [4.2, 3.1, 2.0];
+      const yPos = [-0.65, 0.15, 0.95];
 
-      slabSizes.forEach((size, idx) => {
-        const { group: slab, mesh } = createFramedBox(
-          size,
-          slabHeights[idx],
-          size,
-          boneColor,
-          0.85,
-          inkColor
-        );
-        slab.position.y = yOffsets[idx];
+      sizes.forEach((s, idx) => {
+        const { group: slab, mesh } = createObsidianNode(s, 0.3, s, 0x10b981, "memtable", 0.75);
+        slab.position.y = yPos[idx];
         memtableGroup.add(slab);
-        mesh.userData = { nodeId: "memtable" };
-        interactiveObjects.push(mesh);
       });
 
-      // Pointer connecting pillars between tiers
-      const p1 = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.04, 0.04, 1.4, 8),
-        new THREE.MeshBasicMaterial({ color: inkColor })
-      );
-      p1.position.set(0.8, 0.2, 0.8);
-      memtableGroup.add(p1);
-
-      const p2 = p1.clone();
-      p2.position.set(-0.8, 0.2, -0.8);
-      memtableGroup.add(p2);
+      // SkipList Vertical Pointer Pillars
+      [-0.9, 0.9].forEach((px) => {
+        [-0.9, 0.9].forEach((pz) => {
+          const pillar = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.04, 0.04, 1.8, 12),
+            new THREE.MeshBasicMaterial({ color: 0x10b981, transparent: true, opacity: 0.8 })
+          );
+          pillar.position.set(px, 0.15, pz);
+          memtableGroup.add(pillar);
+        });
+      });
     }
     scene.add(memtableGroup);
-    nodeMeshes.push({ id: "memtable", mesh: memtableGroup });
+    nodeGroups["memtable"] = memtableGroup;
 
-    // 4. Bloom Filter (Scanning Precision Matrix)
+    // 4. Bloom Filter Matrix (04) - Luminous BitSet Grid
     const bloomGroup = new THREE.Group();
-    bloomGroup.position.set(4, 0.5, -3.5);
+    bloomGroup.position.set(4.2, 0.8, -3.2);
     {
-      const { group: panel, mesh } = createFramedBox(3.4, 0.2, 3.4, 0x1f1e1c, 0.95, goldAccent);
-      bloomGroup.add(panel);
-      mesh.userData = { nodeId: "bloom" };
-      interactiveObjects.push(mesh);
+      const { group: base } = createObsidianNode(3.6, 0.25, 3.6, 0x06b6d4, "bloom", 0.95);
+      bloomGroup.add(base);
 
-      // Embedded 4x4 laser bitset grid
-      for (let x = -1.2; x <= 1.2; x += 0.8) {
-        for (let z = -1.2; z <= 1.2; z += 0.8) {
-          const bitGeom = new THREE.CylinderGeometry(0.12, 0.12, 0.35, 12);
-          const bitMat = new THREE.MeshBasicMaterial({
-            color: Math.random() > 0.4 ? goldAccent : 0x595855
-          });
-          const bitMesh = new THREE.Mesh(bitGeom, bitMat);
-          bitMesh.position.set(x, 0.1, z);
+      // Embedded 5x5 Glowing Cyan Bit Matrix
+      for (let x = -1.4; x <= 1.4; x += 0.7) {
+        for (let z = -1.4; z <= 1.4; z += 0.7) {
+          const isLit = (Math.abs(x * 10) + Math.abs(z * 10)) % 3 !== 0;
+          const bitMesh = new THREE.Mesh(
+            new THREE.BoxGeometry(0.2, 0.35, 0.2),
+            new THREE.MeshStandardMaterial({
+              color: isLit ? 0x06b6d4 : 0x1f2937,
+              emissive: isLit ? 0x06b6d4 : 0x000000,
+              emissiveIntensity: isLit ? 0.9 : 0
+            })
+          );
+          bitMesh.position.set(x, 0.18, z);
+          bitMesh.userData = { nodeId: "bloom" };
           bloomGroup.add(bitMesh);
+          interactiveMeshes.push(bitMesh);
         }
       }
     }
     scene.add(bloomGroup);
-    nodeMeshes.push({ id: "bloom", mesh: bloomGroup });
+    nodeGroups["bloom"] = bloomGroup;
 
-    // 5. SSTables on Disk (Heavy Monolith Slabs Stacked)
+    // 5. SSTables Monoliths (05) - Stacked Obsidian/Titanium Storage Tablets
     const sstableGroup = new THREE.Group();
-    sstableGroup.position.set(6, -1.2, 2.5);
+    sstableGroup.position.set(6.5, -1.2, 2);
     {
-      // 3 Stacked Disk SSTable Blocks (L0, L1, Compacted)
       for (let i = 0; i < 3; i++) {
-        const { group: block, mesh } = createFramedBox(3.2, 0.7, 3.2, 0xdfdcd5, 0.98, inkColor);
-        block.position.y = i * 0.85;
-        sstableGroup.add(block);
-        mesh.userData = { nodeId: "sstable" };
-        interactiveObjects.push(mesh);
+        const { group: tab } = createObsidianNode(3.5, 0.75, 3.5, 0xa855f7, "sstable", 0.9);
+        tab.position.y = i * 0.95;
+        sstableGroup.add(tab);
       }
     }
     scene.add(sstableGroup);
-    nodeMeshes.push({ id: "sstable", mesh: sstableGroup });
+    nodeGroups["sstable"] = sstableGroup;
 
-    // 6. K-Way Compactor (Asynchronous Turbine / Core)
+    // 6. K-Way Compactor (06) - Neon Turbine
     const compactorGroup = new THREE.Group();
-    compactorGroup.position.set(1.5, -1.8, 4.5);
+    compactorGroup.position.set(1.8, -2.4, 4.2);
     {
-      const { group: box, mesh } = createFramedBox(2.2, 1.4, 2.2, boneColor, 0.9, inkColor);
-      compactorGroup.add(box);
-      mesh.userData = { nodeId: "compactor" };
-      interactiveObjects.push(mesh);
+      const { group: core } = createObsidianNode(2.4, 1.4, 2.4, 0xec4899, "compactor", 0.9);
+      compactorGroup.add(core);
 
-      // Dual Intersecting Caliper Rings
-      const ring1 = new THREE.Mesh(
-        new THREE.TorusGeometry(1.3, 0.04, 8, 32),
-        new THREE.MeshBasicMaterial({ color: inkColor })
+      // Dual Intersecting Glowing Gyro Rings
+      const r1 = new THREE.Mesh(
+        new THREE.TorusGeometry(1.6, 0.04, 12, 32),
+        new THREE.MeshBasicMaterial({ color: 0xec4899 })
       );
-      ring1.rotation.y = Math.PI / 4;
-      compactorGroup.add(ring1);
+      r1.rotation.x = Math.PI / 3;
+      compactorGroup.add(r1);
+
+      const r2 = new THREE.Mesh(
+        new THREE.TorusGeometry(1.6, 0.04, 12, 32),
+        new THREE.MeshBasicMaterial({ color: 0xa855f7 })
+      );
+      r2.rotation.y = Math.PI / 3;
+      compactorGroup.add(r2);
     }
     scene.add(compactorGroup);
-    nodeMeshes.push({ id: "compactor", mesh: compactorGroup });
+    nodeGroups["compactor"] = compactorGroup;
 
-    // 7. Pub/Sub Broker Hub (Central Fan-out Antenna)
+    // 7. Pub/Sub Broker Hub (07) - Gold Beacon with Satellites
     const pubsubGroup = new THREE.Group();
-    pubsubGroup.position.set(-4, -1.2, 3);
+    pubsubGroup.position.set(-4.2, -1.6, 3.2);
     {
-      const { group: hub, mesh } = createFramedBox(1.8, 1.2, 1.8, boneColor, 0.95, inkColor);
+      const { group: hub } = createObsidianNode(2.0, 1.4, 2.0, 0xeab308, "pubsub", 0.95);
       pubsubGroup.add(hub);
-      mesh.userData = { nodeId: "pubsub" };
-      interactiveObjects.push(mesh);
 
-      // Radial Subscriber Satellites
+      // 4 Floating Satellites
       for (let i = 0; i < 4; i++) {
         const angle = (i * Math.PI) / 2;
-        const sub = new THREE.Mesh(
-          new THREE.SphereGeometry(0.25, 16, 16),
-          new THREE.MeshStandardMaterial({ color: inkColor, roughness: 0.3 })
+        const sat = new THREE.Mesh(
+          new THREE.SphereGeometry(0.28, 16, 16),
+          new THREE.MeshStandardMaterial({
+            color: 0xeab308,
+            emissive: 0xeab308,
+            emissiveIntensity: 0.6
+          })
         );
-        sub.position.set(Math.cos(angle) * 1.8, 0, Math.sin(angle) * 1.8);
-        pubsubGroup.add(sub);
+        sat.position.set(Math.cos(angle) * 2.2, 0, Math.sin(angle) * 2.2);
+        sat.userData = { nodeId: "pubsub" };
+        pubsubGroup.add(sat);
+        interactiveMeshes.push(sat);
 
-        // Connector line
-        const lineGeom = new THREE.BufferGeometry().setFromPoints([
+        const beamGeom = new THREE.BufferGeometry().setFromPoints([
           new THREE.Vector3(0, 0, 0),
-          new THREE.Vector3(Math.cos(angle) * 1.8, 0, Math.sin(angle) * 1.8)
+          new THREE.Vector3(Math.cos(angle) * 2.2, 0, Math.sin(angle) * 2.2)
         ]);
-        const line = new THREE.Line(
-          lineGeom,
-          new THREE.LineBasicMaterial({ color: puttyDark, transparent: true, opacity: 0.5 })
+        const beam = new THREE.Line(
+          beamGeom,
+          new THREE.LineBasicMaterial({ color: 0xeab308, transparent: true, opacity: 0.45 })
         );
-        pubsubGroup.add(line);
+        pubsubGroup.add(beam);
       }
     }
     scene.add(pubsubGroup);
-    nodeMeshes.push({ id: "pubsub", mesh: pubsubGroup });
+    nodeGroups["pubsub"] = pubsubGroup;
 
-    // -------------------------------------------------------------
-    // Architectural Pathway Splines & Dynamic Data Pulses
-    // -------------------------------------------------------------
-    interface FlowPathway {
+    // -----------------------------------------------------------------
+    // High-Tech Luminous Data Conduits (Catmull-Rom Arches)
+    // -----------------------------------------------------------------
+    interface FlowConduit {
       flow: FlowType;
       curve: THREE.CatmullRomCurve3;
-      tubeMesh: THREE.Line;
+      tubeMesh: THREE.Mesh;
+      colorHex: number;
     }
 
-    const pathways: FlowPathway[] = [];
+    const conduits: FlowConduit[] = [];
 
-    // Helper: create smooth arched curve between points
-    const makeCurve = (p1: [number, number, number], p2: [number, number, number], midYOffset = 1.2) => {
+    const makeConduit = (
+      p1: [number, number, number],
+      p2: [number, number, number],
+      colorHex: number,
+      flow: FlowType,
+      midYBonus = 1.4
+    ) => {
       const v1 = new THREE.Vector3(...p1);
       const v2 = new THREE.Vector3(...p2);
       const mid = new THREE.Vector3().addVectors(v1, v2).multiplyScalar(0.5);
-      mid.y += midYOffset;
-      return new THREE.CatmullRomCurve3([v1, mid, v2]);
-    };
+      mid.y += midYBonus;
 
-    const writeCurve1 = makeCurve([-8, 1.5, 0], [-2.5, 3.2, -4], 1.5); // Client -> WAL
-    const writeCurve2 = makeCurve([-8, 1.5, 0], [0, 1.8, 1], 1.0);    // Client -> MemTable
-    const readCurve1 = makeCurve([-8, 1.5, 0], [0, 1.8, 1], 0.8);     // Client -> MemTable
-    const readCurve2 = makeCurve([0, 1.8, 1], [4, 0.5, -3.5], 1.2);    // MemTable -> Bloom
-    const readCurve3 = makeCurve([4, 0.5, -3.5], [6, -0.5, 2.5], 1.0); // Bloom -> SSTable
-    const compactCurve1 = makeCurve([0, 1.8, 1], [6, 0.5, 2.5], 1.5); // MemTable -> Flush SSTable
-    const compactCurve2 = makeCurve([6, -0.5, 2.5], [1.5, -1.8, 4.5], 1.0); // SSTable -> Compactor
-    const pubsubCurve = makeCurve([-8, 1.5, 0], [-4, -1.2, 3], 0.8); // Client -> PubSub
-
-    const addPathway = (curve: THREE.CatmullRomCurve3, flow: FlowType) => {
-      const points = curve.getPoints(50);
-      const geom = new THREE.BufferGeometry().setFromPoints(points);
-      const line = new THREE.Line(
-        geom,
-        new THREE.LineBasicMaterial({
-          color: inkColor,
-          transparent: true,
-          opacity: 0.25
-        })
-      );
-      scene.add(line);
-      pathways.push({ flow, curve, tubeMesh: line });
-    };
-
-    addPathway(writeCurve1, "write");
-    addPathway(writeCurve2, "write");
-    addPathway(readCurve1, "read");
-    addPathway(readCurve2, "read");
-    addPathway(readCurve3, "read");
-    addPathway(compactCurve1, "compact");
-    addPathway(compactCurve2, "compact");
-    addPathway(pubsubCurve, "pubsub");
-
-    // -------------------------------------------------------------
-    // Data Packet Spheres (Pulses traveling along curves)
-    // -------------------------------------------------------------
-    const packetCount = 18;
-    const packetGeom = new THREE.SphereGeometry(0.18, 12, 12);
-    const packetMat = new THREE.MeshBasicMaterial({ color: inkColor });
-    const packetMeshes: { mesh: THREE.Mesh; pathwayIdx: number; t: number; speed: number }[] = [];
-
-    for (let i = 0; i < packetCount; i++) {
-      const mesh = new THREE.Mesh(packetGeom, packetMat.clone());
-      scene.add(mesh);
-      packetMeshes.push({
-        mesh,
-        pathwayIdx: i % pathways.length,
-        t: Math.random(),
-        speed: 0.006 + Math.random() * 0.005
+      const curve = new THREE.CatmullRomCurve3([v1, mid, v2]);
+      const tubeGeom = new THREE.TubeGeometry(curve, 40, 0.07, 8, false);
+      const tubeMat = new THREE.MeshStandardMaterial({
+        color: colorHex,
+        emissive: colorHex,
+        emissiveIntensity: 0.25,
+        roughness: 0.3,
+        transparent: true,
+        opacity: 0.35
       });
-    }
+      const tubeMesh = new THREE.Mesh(tubeGeom, tubeMat);
+      scene.add(tubeMesh);
 
-    // -------------------------------------------------------------
-    // Interactive Raycaster & Mouse Orbit Control
-    // -------------------------------------------------------------
+      conduits.push({ flow, curve, tubeMesh, colorHex });
+    };
+
+    // Build Conduits
+    makeConduit([-7, 1.8, 0], [-2.5, 3.8, -3.5], 0xf59e0b, "write", 1.8); // Client -> WAL
+    makeConduit([-7, 1.8, 0], [0, 2.2, 1.2], 0x10b981, "write", 1.0);     // Client -> MemTable
+    makeConduit([-7, 1.8, 0], [0, 2.2, 1.2], 0x10b981, "read", 1.0);      // Client -> MemTable
+    makeConduit([0, 2.2, 1.2], [4.2, 0.8, -3.2], 0x06b6d4, "read", 1.2);   // MemTable -> Bloom
+    makeConduit([4.2, 0.8, -3.2], [6.5, 0.5, 2], 0xa855f7, "read", 1.0);  // Bloom -> SSTable
+    makeConduit([0, 2.2, 1.2], [6.5, 1.0, 2], 0xa855f7, "compact", 1.6);  // MemTable -> Flush SSTable
+    makeConduit([6.5, -0.5, 2], [1.8, -2.4, 4.2], 0xec4899, "compact", 0.9); // SSTable -> Compactor
+    makeConduit([-7, 1.8, 0], [-4.2, -1.6, 3.2], 0xeab308, "pubsub", 1.1);  // Client -> PubSub
+
+    // -----------------------------------------------------------------
+    // Animated Glowing Laser Energy Pulses (Data Packets)
+    // -----------------------------------------------------------------
+    const packetsPerConduit = 3;
+    const packetMeshes: {
+      mesh: THREE.Mesh;
+      conduit: FlowConduit;
+      t: number;
+      speed: number;
+    }[] = [];
+
+    const packetGeom = new THREE.SphereGeometry(0.22, 16, 16);
+
+    conduits.forEach((c) => {
+      for (let i = 0; i < packetsPerConduit; i++) {
+        const pMat = new THREE.MeshStandardMaterial({
+          color: c.colorHex,
+          emissive: c.colorHex,
+          emissiveIntensity: 1.5,
+          roughness: 0.1
+        });
+        const mesh = new THREE.Mesh(packetGeom, pMat);
+        scene.add(mesh);
+        packetMeshes.push({
+          mesh,
+          conduit: c,
+          t: (i / packetsPerConduit) + Math.random() * 0.1,
+          speed: 0.007 + Math.random() * 0.004
+        });
+      }
+    });
+
+    // -----------------------------------------------------------------
+    // Interactive Raycaster, Mouse Drag Orbit & Node Click
+    // -----------------------------------------------------------------
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
 
     let isMouseDown = false;
     let prevMouseX = 0;
     let prevMouseY = 0;
-    let spherical = { radius: 24, theta: 0.8, phi: 1.1 }; // isometric default
+    let spherical = { radius: 25, theta: 0.82, phi: 1.05 };
 
-    const updateCameraFromSpherical = () => {
+    const updateCamera = () => {
       camera.position.x = spherical.radius * Math.sin(spherical.phi) * Math.sin(spherical.theta);
       camera.position.y = spherical.radius * Math.cos(spherical.phi);
       camera.position.z = spherical.radius * Math.sin(spherical.phi) * Math.cos(spherical.theta);
-      camera.lookAt(0, 0, 0);
+      camera.lookAt(0, 0.4, 0);
     };
-    updateCameraFromSpherical();
+    updateCamera();
 
     const onPointerDown = (e: MouseEvent) => {
       isMouseDown = true;
@@ -517,22 +701,21 @@ export function ThreeArchitectureVisualizer() {
       mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
 
       if (isMouseDown) {
-        setIsRotating(false);
+        setIsAutoOrbit(false);
         const deltaX = e.clientX - prevMouseX;
         const deltaY = e.clientY - prevMouseY;
         prevMouseX = e.clientX;
         prevMouseY = e.clientY;
 
-        spherical.theta -= deltaX * 0.008;
-        spherical.phi = Math.max(0.2, Math.min(Math.PI / 2 - 0.05, spherical.phi - deltaY * 0.008));
-        updateCameraFromSpherical();
+        spherical.theta -= deltaX * 0.007;
+        spherical.phi = Math.max(0.15, Math.min(Math.PI / 2 - 0.05, spherical.phi - deltaY * 0.007));
+        updateCamera();
       } else {
-        // Hover Raycast
+        // Raycast Hover
         raycaster.setFromCamera(mouse, camera);
-        const intersects = raycaster.intersectObjects(interactiveObjects, true);
-        if (intersects.length > 0) {
-          const hitObj = intersects[0].object;
-          const nid = hitObj.userData.nodeId;
+        const hits = raycaster.intersectObjects(interactiveMeshes, false);
+        if (hits.length > 0) {
+          const nid = hits[0].object.userData.nodeId;
           if (nid) {
             setHoveredNodeId(nid);
             renderer.domElement.style.cursor = "pointer";
@@ -554,12 +737,11 @@ export function ThreeArchitectureVisualizer() {
       mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
 
       raycaster.setFromCamera(mouse, camera);
-      const intersects = raycaster.intersectObjects(interactiveObjects, true);
-      if (intersects.length > 0) {
-        const hitObj = intersects[0].object;
-        const nid = hitObj.userData.nodeId;
+      const hits = raycaster.intersectObjects(interactiveMeshes, false);
+      if (hits.length > 0) {
+        const nid = hits[0].object.userData.nodeId;
         if (nid && ARCHITECTURE_NODES[nid]) {
-          setSelectedNode(ARCHITECTURE_NODES[nid]);
+          setSelectedNodeId(nid);
         }
       }
     };
@@ -570,9 +752,9 @@ export function ThreeArchitectureVisualizer() {
     window.addEventListener("pointerup", onPointerUp);
     dom.addEventListener("click", onClick);
 
-    // -------------------------------------------------------------
+    // -----------------------------------------------------------------
     // Animation Loop
-    // -------------------------------------------------------------
+    // -----------------------------------------------------------------
     let animationFrameId: number;
     let clock = new THREE.Clock();
 
@@ -581,58 +763,75 @@ export function ThreeArchitectureVisualizer() {
       const delta = clock.getDelta();
       const elapsed = clock.getElapsedTime();
 
-      // Subtle slow auto-orbit if not dragging
-      if (isRotating) {
-        spherical.theta += delta * 0.05;
-        updateCameraFromSpherical();
+      // Slow cinematic auto-orbit
+      if (isAutoOrbit) {
+        spherical.theta += delta * 0.06;
+        updateCamera();
       }
 
-      // Gentle floating levitation for SkipList tiers
-      memtableGroup.position.y = 1.8 + Math.sin(elapsed * 1.5) * 0.08;
-      walGroup.rotation.y = elapsed * 0.4;
-      compactorGroup.rotation.y = -elapsed * 0.5;
+      // Levitation and rotation kinetics
+      clientCore.rotation.y = elapsed * 1.5;
+      clientCore.rotation.x = elapsed * 0.8;
+      walGroup.rotation.y = elapsed * 0.5;
+      memtableGroup.position.y = 2.2 + Math.sin(elapsed * 1.8) * 0.12;
+      compactorGroup.rotation.y = -elapsed * 0.8;
+      pubsubGroup.rotation.y = elapsed * 0.35;
 
-      // Update pathways and packets according to active flow
-      pathways.forEach((p) => {
-        const isCurrent = p.flow === activeFlow;
-        const mat = p.tubeMesh.material as THREE.LineBasicMaterial;
-        mat.opacity = isCurrent ? 0.75 : 0.12;
-        mat.color.setHex(isCurrent ? inkColor : 0x808080);
+      // Update conduits and packet visibility according to active flow
+      conduits.forEach((c) => {
+        const isCurrent = c.flow === activeFlow;
+        const mat = c.tubeMesh.material as THREE.MeshStandardMaterial;
+        mat.opacity = isCurrent ? 0.85 : 0.08;
+        mat.emissiveIntensity = isCurrent ? 0.8 : 0.02;
       });
 
-      // Filter active pathways for particles
-      const activePathways = pathways.filter((p) => p.flow === activeFlow);
-
-      packetMeshes.forEach((pkt, idx) => {
-        if (activePathways.length === 0) {
-          pkt.mesh.visible = false;
-          return;
-        }
-        pkt.mesh.visible = true;
-        const path = activePathways[idx % activePathways.length];
+      // Update packet positions along active conduits
+      packetMeshes.forEach((pkt) => {
+        const isCurrent = pkt.conduit.flow === activeFlow;
+        pkt.mesh.visible = isCurrent;
+        if (!isCurrent) return;
 
         pkt.t = (pkt.t + pkt.speed) % 1;
-        const pos = path.curve.getPointAt(pkt.t);
+        const pos = pkt.conduit.curve.getPointAt(pkt.t);
         pkt.mesh.position.copy(pos);
-
-        // Highlight packet
-        const pMat = pkt.mesh.material as THREE.MeshBasicMaterial;
-        pMat.color.setHex(goldAccent);
       });
+
+      // Calculate 2D Screen Positions for floating HUD Labels
+      const newCoords: Record<string, { x: number; y: number; visible: boolean }> = {};
+      const tempVec = new THREE.Vector3();
+
+      Object.entries(ARCHITECTURE_NODES).forEach(([id, n]) => {
+        const group = nodeGroups[id];
+        if (group) {
+          group.getWorldPosition(tempVec);
+          tempVec.y += 1.8; // Offset above component
+          tempVec.project(camera);
+
+          const isBehind = tempVec.z > 1;
+          const screenX = ((tempVec.x + 1) * width) / 2;
+          const screenY = ((-tempVec.y + 1) * height) / 2;
+
+          newCoords[id] = {
+            x: screenX,
+            y: screenY,
+            visible: !isBehind && screenX > 20 && screenX < width - 20 && screenY > 20 && screenY < height - 20
+          };
+        }
+      });
+      setScreenCoords(newCoords);
 
       renderer.render(scene, camera);
     };
 
     animate();
 
-    // Resize Handler
     const handleResize = () => {
       if (!container) return;
-      const newW = container.clientWidth;
-      const newH = container.clientHeight || 550;
-      camera.aspect = newW / newH;
+      const nw = container.clientWidth;
+      const nh = container.clientHeight || 600;
+      camera.aspect = nw / nh;
       camera.updateProjectionMatrix();
-      renderer.setSize(newW, newH);
+      renderer.setSize(nw, nh);
     };
     window.addEventListener("resize", handleResize);
 
@@ -648,148 +847,233 @@ export function ThreeArchitectureVisualizer() {
       }
       renderer.dispose();
     };
-  }, [activeFlow, isRotating]);
+  }, [activeFlow, isAutoOrbit, pulseTrigger]);
 
   return (
     <div className="w-full flex flex-col items-center select-none">
-      {/* Visualizer Top Control Bar */}
-      <div className="w-full max-w-6xl flex flex-wrap items-center justify-between gap-4 mb-4 pb-4 border-b border-[#dfdcd5]">
-        {/* Pipeline Flow Switchers */}
-        <div className="flex flex-wrap items-center gap-2">
-          {(["write", "read", "compact", "pubsub"] as const).map((flow) => (
-            <button
-              key={flow}
-              onClick={() => setActiveFlow(flow)}
-              className={`px-3.5 py-1.5 text-[11px] uppercase tracking-[0.08em] font-medium transition-all rounded-[3px] border ${
-                activeFlow === flow
-                  ? "bg-[#000000] text-[#ffffff] border-[#000000] shadow-none"
-                  : "bg-[#e7e5e4] text-[#595855] border-[#dfdcd5] hover:text-[#000000] hover:border-[#000000]"
-              }`}
-              style={{ fontFamily: "var(--font-helvetica-now)" }}
-            >
-              {flow === "write" && "⚡ Write Pipeline (PUT)"}
-              {flow === "read" && "🔍 Read Pipeline (GET)"}
-              {flow === "compact" && "🗜️ Compaction Pipeline"}
-              {flow === "pubsub" && "📡 Pub/Sub Broadcast"}
-            </button>
-          ))}
-        </div>
-
-        {/* View Controls */}
-        <div className="flex items-center gap-3 text-[11px] text-[#595855]">
-          <button
-            onClick={() => setIsRotating((prev) => !prev)}
-            className="flex items-center gap-1.5 px-2.5 py-1 bg-[#e7e5e4] border border-[#dfdcd5] rounded-[3px] hover:text-[#000000] hover:border-[#000000] transition-colors"
-          >
-            <span>{isRotating ? "⏸ Pause Rotation" : "▶ Resume Auto-Orbit"}</span>
-          </button>
-          <span className="hidden sm:inline text-[#808080]">&bull; Drag to rotate in 3D</span>
-        </div>
-      </div>
-
-      {/* Active Flow Subtitle Banner */}
-      <div className="w-full max-w-6xl mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-[#dfdcd5]/40 px-4 py-2.5 border border-[#dfdcd5] rounded-[4px]">
-        <div>
-          <span
-            className="text-[12px] font-semibold text-[#000000] tracking-wide"
-            style={{ fontFamily: "var(--font-helvetica-now)" }}
-          >
-            {flowDescriptions[activeFlow].title}:
-          </span>{" "}
-          <span
-            className="text-[12px] text-[#595855]"
-            style={{ fontFamily: "var(--font-helvetica-now)" }}
-          >
-            {flowDescriptions[activeFlow].subtitle}
-          </span>
-        </div>
-        <div className="font-mono text-[11px] text-[#000000] tracking-tight">
-          {flowDescriptions[activeFlow].path}
-        </div>
-      </div>
-
-      {/* Main 3D Canvas Stage with Live Inspector Panel */}
-      <div className="w-full max-w-6xl grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* 3D WebGL Canvas Viewport (8 Columns on desktop) */}
-        <div className="lg:col-span-8 relative w-full h-[450px] sm:h-[540px] bg-[#dfdcd5]/20 rounded-[8px] border border-[#dfdcd5] overflow-hidden flex items-center justify-center">
-          {/* Subtle canvas watermark & coordinate reticle */}
-          <div className="absolute top-3 left-4 text-[10px] uppercase font-mono tracking-widest text-[#808080] pointer-events-none">
-            [ 3D LSM ISOMETRIC PROJECTION &bull; DRAG TO ORBIT ]
+      {/* Visualizer Obsidian Frame */}
+      <div className="w-full max-w-7xl bg-[#09090b] rounded-[16px] border border-[#27273a] shadow-2xl p-4 sm:p-7 overflow-hidden text-white">
+        {/* Top Control Bar: Active Telemetry HUD & Pipeline Switcher */}
+        <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 pb-5 border-b border-[#1f1f2e]">
+          {/* Sider Live Engine Status */}
+          <div className="flex items-center gap-3">
+            <div className="w-2.5 h-2.5 rounded-full bg-[#10b981] animate-pulse" />
+            <div className="font-mono text-[12px] tracking-wider text-[#9ca3af]">
+              ENGINE STATUS: <span className="text-[#10b981] font-semibold">LSM ONLINE</span>
+            </div>
+            <div className="hidden sm:flex items-center gap-2 border-l border-[#27273a] pl-3 font-mono text-[11px] text-[#6b7280]">
+              <span>THROUGHPUT: <strong className="text-white">184,200 OPS/S</strong></span>
+              <span>&bull;</span>
+              <span>AVG LATENCY: <strong className="text-[#38bdf8]">0.18 MS</strong></span>
+            </div>
           </div>
 
-          {hoveredNodeId && (
-            <div className="absolute top-3 right-4 px-2 py-0.5 bg-[#000000] text-[#ffffff] text-[10px] font-mono tracking-wide rounded-[2px] pointer-events-none">
-              TARGET: {hoveredNodeId.toUpperCase()} &bull; CLICK TO INSPECT
-            </div>
-          )}
+          {/* Pipeline Flow Tabs */}
+          <div className="flex flex-wrap items-center gap-2">
+            {(["write", "read", "compact", "pubsub"] as const).map((flow) => {
+              const active = activeFlow === flow;
+              return (
+                <button
+                  key={flow}
+                  onClick={() => {
+                    setActiveFlow(flow);
+                    setPulseTrigger((p) => p + 1);
+                  }}
+                  className={`px-3 py-1.5 rounded-[6px] text-[11px] font-mono tracking-wider uppercase transition-all border ${
+                    active
+                      ? "bg-white text-black font-semibold border-white shadow-[0_0_15px_rgba(255,255,255,0.2)]"
+                      : "bg-[#14141e] text-[#9ca3af] border-[#27273a] hover:text-white hover:border-[#4b5563]"
+                  }`}
+                >
+                  {flow === "write" && "⚡ Write Pipeline (PUT)"}
+                  {flow === "read" && "🔍 Read Hierarchy (GET)"}
+                  {flow === "compact" && "🗜️ Compaction Engine"}
+                  {flow === "pubsub" && "📡 Pub/Sub Broadcast"}
+                </button>
+              );
+            })}
+          </div>
 
-          {/* Canvas Mount Container */}
-          <div ref={containerRef} className="w-full h-full cursor-grab active:cursor-grabbing" />
+          {/* Camera Orbit Toggle */}
+          <button
+            onClick={() => setIsAutoOrbit((prev) => !prev)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-[6px] bg-[#14141e] border border-[#27273a] text-[11px] font-mono text-[#9ca3af] hover:text-white hover:border-[#4b5563] transition-colors"
+          >
+            <span>{isAutoOrbit ? "⏸ Pause Orbit" : "▶ Resume Auto-Orbit"}</span>
+          </button>
         </div>
 
-        {/* Component Deep-Dive Inspector Panel (4 Columns on desktop) */}
-        <div className="lg:col-span-4 bg-[#e7e5e4] border border-[#dfdcd5] rounded-[8px] p-5 flex flex-col justify-between min-h-[450px] sm:min-h-[540px]">
-          <div>
-            <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.14em] text-[#595855] mb-2 font-mono">
-              <span>{selectedNode.tier}</span>
-              <span className="text-[#b48a4d] font-semibold">{selectedNode.complexity}</span>
+        {/* Active Flow Pipeline Banner */}
+        <div className="my-4 px-4 py-3 bg-[#111118] border border-[#1f1f2e] rounded-[8px] flex flex-col md:flex-row md:items-center justify-between gap-2 font-mono">
+          <div className="flex items-center gap-2">
+            <span
+              className="text-[12px] font-bold tracking-wider"
+              style={{ color: flowDescriptions[activeFlow].color }}
+            >
+              {flowDescriptions[activeFlow].title}
+            </span>
+            <span className="text-[12px] text-[#6b7280] hidden sm:inline">&bull;</span>
+            <span className="text-[12px] text-[#9ca3af]">
+              {flowDescriptions[activeFlow].subtitle}
+            </span>
+          </div>
+          <div className="text-[11px] text-white/90 bg-[#181824] px-2.5 py-1 rounded-[4px] border border-[#27273a] self-start md:self-auto">
+            {flowDescriptions[activeFlow].path}
+          </div>
+        </div>
+
+        {/* 3D Canvas Stage & Inspector Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+          {/* Main 3D Viewport (8 Columns) */}
+          <div className="lg:col-span-8 relative w-full h-[480px] sm:h-[580px] bg-[#0c0c12] rounded-[12px] border border-[#1f1f2e] overflow-hidden">
+            {/* Viewport Header Controls */}
+            <div className="absolute top-4 left-4 z-10 flex items-center gap-2 pointer-events-none">
+              <span className="px-2 py-0.5 rounded-[4px] bg-[#14141e]/90 border border-[#27273a] font-mono text-[10px] text-[#9ca3af]">
+                3D LSM ISOMETRIC SCENE &bull; DRAG TO ORBIT &bull; CLICK NODES
+              </span>
             </div>
 
-            <h3
-              className="text-[26px] leading-[1.2] font-normal text-[#000000] mb-3"
-              style={{ fontFamily: "var(--font-davinci)" }}
-            >
-              {selectedNode.name}
-            </h3>
+            {/* Floating 3D HUD Node Tags */}
+            {Object.entries(screenCoords).map(([id, coord]) => {
+              if (!coord.visible) return null;
+              const node = ARCHITECTURE_NODES[id];
+              if (!node) return null;
+              const isSelected = selectedNodeId === id;
+              const isHovered = hoveredNodeId === id;
 
-            <p
-              className="text-[13px] leading-[1.6] text-[#595855] mb-4"
-              style={{ fontFamily: "var(--font-helvetica-now)" }}
-            >
-              {selectedNode.summary}
-            </p>
-
-            {/* Architectural Highlights */}
-            <div className="space-y-2 mb-4">
-              {selectedNode.details.map((item, idx) => (
-                <div key={idx} className="flex items-start gap-2 text-[12px] text-[#000000]">
-                  <span className="text-[#b48a4d] text-[14px] leading-none">&bull;</span>
-                  <span style={{ fontFamily: "var(--font-helvetica-now)" }}>{item}</span>
+              return (
+                <div
+                  key={id}
+                  onClick={() => setSelectedNodeId(id)}
+                  style={{
+                    transform: `translate(${coord.x}px, ${coord.y}px) translate(-50%, -50%)`,
+                    borderColor: isSelected ? node.accentColor : isHovered ? "#ffffff" : "#27273a"
+                  }}
+                  className={`absolute z-20 cursor-pointer pointer-events-auto px-2.5 py-1 rounded-[6px] backdrop-blur-md transition-all font-mono text-[11px] flex items-center gap-1.5 shadow-lg ${
+                    isSelected
+                      ? "bg-black/90 scale-110 shadow-[0_0_15px_rgba(255,255,255,0.15)] ring-1"
+                      : "bg-[#09090b]/80 hover:scale-105"
+                  }`}
+                >
+                  <span
+                    className="w-1.5 h-1.5 rounded-full"
+                    style={{ backgroundColor: node.accentColor }}
+                  />
+                  <span className="text-[#6b7280] font-semibold">{node.tag}</span>
+                  <span className="text-white font-medium">{node.name.split(" ")[0]}</span>
                 </div>
-              ))}
-            </div>
+              );
+            })}
+
+            {/* Three.js Canvas Mount */}
+            <div ref={containerRef} className="w-full h-full cursor-grab active:cursor-grabbing" />
           </div>
 
-          {/* Go Engine Code Snippet */}
-          <div className="mt-4 pt-4 border-t border-[#dfdcd5]">
-            <div className="text-[10px] uppercase font-mono tracking-wider text-[#808080] mb-1.5">
-              Engine Go Implementation:
+          {/* Deep-Dive Component Inspector Panel (4 Columns) */}
+          <div className="lg:col-span-4 bg-[#0e0e16] border border-[#1f1f2e] rounded-[12px] p-5 sm:p-6 flex flex-col justify-between min-h-[480px] sm:min-h-[580px]">
+            <div>
+              {/* Header Badges */}
+              <div className="flex items-center justify-between mb-3 font-mono text-[10px] uppercase tracking-wider">
+                <span className="text-[#9ca3af]">{selectedNode.tier}</span>
+                <span
+                  className="px-2 py-0.5 rounded-[4px] font-semibold"
+                  style={{
+                    backgroundColor: `${selectedNode.accentColor}20`,
+                    color: selectedNode.accentColor,
+                    border: `1px solid ${selectedNode.accentColor}50`
+                  }}
+                >
+                  {selectedNode.badge}
+                </span>
+              </div>
+
+              {/* Title & Complexity */}
+              <h3
+                className="text-[28px] sm:text-[32px] font-normal text-white leading-tight mb-1"
+                style={{ fontFamily: "var(--font-davinci)" }}
+              >
+                {selectedNode.name}
+              </h3>
+              <div className="font-mono text-[11px] mb-4" style={{ color: selectedNode.accentColor }}>
+                Complexity: {selectedNode.complexity}
+              </div>
+
+              {/* Summary Description */}
+              <p
+                className="text-[13px] sm:text-[14px] leading-relaxed text-[#9ca3af] mb-5"
+                style={{ fontFamily: "var(--font-helvetica-now)" }}
+              >
+                {selectedNode.summary}
+              </p>
+
+              {/* Architectural Technical Points */}
+              <div className="space-y-2.5 mb-6">
+                {selectedNode.details.map((point, idx) => (
+                  <div key={idx} className="flex items-start gap-2.5 text-[12px] text-white/90">
+                    <span
+                      className="mt-1 w-1.5 h-1.5 rounded-full shrink-0"
+                      style={{ backgroundColor: selectedNode.accentColor }}
+                    />
+                    <span style={{ fontFamily: "var(--font-helvetica-now)" }}>{point}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Live Telemetry Metrics Matrix */}
+              <div className="grid grid-cols-3 gap-2 p-3 bg-[#14141e] border border-[#27273a] rounded-[8px] mb-5">
+                {selectedNode.telemetry.map((t, idx) => (
+                  <div key={idx} className="flex flex-col">
+                    <span className="text-[9px] font-mono uppercase tracking-tight text-[#6b7280]">
+                      {t.label}
+                    </span>
+                    <span className="text-[11px] font-mono font-semibold text-white mt-0.5">
+                      {t.val}
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
-            <pre className="bg-[#1f1e1c] text-[#dfdcd5] p-3 rounded-[4px] text-[11px] font-mono overflow-x-auto leading-relaxed">
-              <code>{selectedNode.codeSnippet}</code>
-            </pre>
+
+            {/* Go Implementation Snippet */}
+            <div className="pt-3 border-t border-[#1f1f2e]">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] font-mono uppercase tracking-wider text-[#6b7280]">
+                  Core Engine Go Implementation:
+                </span>
+                <span className="text-[10px] font-mono text-[#38bdf8]">Zero Dependencies</span>
+              </div>
+              <pre className="bg-[#050508] text-[#e2e8f0] p-3 rounded-[6px] text-[11px] font-mono overflow-x-auto leading-relaxed border border-[#1f1f2e]">
+                <code>{selectedNode.codeSnippet}</code>
+              </pre>
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* Interactive Node Selector Pills below canvas */}
-      <div className="w-full max-w-6xl mt-4 flex flex-wrap items-center justify-center gap-2">
-        <span className="text-[11px] text-[#808080] uppercase tracking-wider mr-1">
-          Direct Node Inspection:
-        </span>
-        {Object.values(ARCHITECTURE_NODES).map((node) => (
-          <button
-            key={node.id}
-            onClick={() => setSelectedNode(node)}
-            className={`px-2.5 py-1 text-[11px] font-mono rounded-[3px] border transition-colors ${
-              selectedNode.id === node.id
-                ? "bg-[#000000] text-[#ffffff] border-[#000000]"
-                : "bg-[#e7e5e4] text-[#595855] border-[#dfdcd5] hover:text-[#000000] hover:border-[#595855]"
-            }`}
-          >
-            {node.name}
-          </button>
-        ))}
+        {/* Quick Node Navigation Ribbon */}
+        <div className="mt-5 pt-4 border-t border-[#1f1f2e] flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2 font-mono text-[11px] text-[#6b7280]">
+            <span>SELECT ARCHITECTURAL LAYER:</span>
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {Object.values(ARCHITECTURE_NODES).map((node) => {
+              const active = selectedNodeId === node.id;
+              return (
+                <button
+                  key={node.id}
+                  onClick={() => setSelectedNodeId(node.id)}
+                  className={`px-3 py-1 rounded-[5px] text-[11px] font-mono transition-all border ${
+                    active
+                      ? "bg-white text-black font-semibold border-white"
+                      : "bg-[#14141e] text-[#9ca3af] border-[#27273a] hover:text-white hover:border-[#4b5563]"
+                  }`}
+                >
+                  <span className="text-[#6b7280] mr-1">{node.tag}</span>
+                  {node.name.split(" ")[0]}
+                </button>
+              );
+            })}
+          </div>
+        </div>
       </div>
     </div>
   );
