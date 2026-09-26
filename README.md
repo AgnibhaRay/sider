@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="https://web-gilt-eight-96.vercel.app">
+  <a href="https://siderdb.vercel.app">
     <img src=".github/assets/sider-banner.svg" alt="SIDER DB Logo" width="100%" style="max-width: 800px; border-radius: 8px;" />
   </a>
 </p>
@@ -17,7 +17,7 @@
 ### ⚡ SIDER v2: The Ultra-Fast, LSM-Tree Persistent Key-Value Store & Real-Time Engine ⚡
 *(Hint: Read **SIDER** backwards and see the fun 😉)*
 
-[![Website](https://img.shields.io/badge/Live_Folio-web--gilt--eight--96.vercel.app-000000?style=for-the-badge&logo=vercel&logoColor=white)](https://web-gilt-eight-96.vercel.app)
+[![Website](https://img.shields.io/badge/Live_Folio-siderdb.vercel.app-000000?style=for-the-badge&logo=vercel&logoColor=white)](https://siderdb.vercel.app)
 [![Release](https://img.shields.io/badge/Release-v2.0.0-ff69b4?style=for-the-badge&logo=github&logoColor=white)](https://github.com/AgnibhaRay/sider/releases/tag/v2.0.0)
 [![Go](https://img.shields.io/badge/Go-1.24+-00ADD8?style=for-the-badge&logo=go&logoColor=white)](https://go.dev/)
 [![CI](https://img.shields.io/badge/Build-Passing-brightgreen?style=for-the-badge&logo=githubactions&logoColor=white)](https://github.com/AgnibhaRay/sider/actions)
@@ -177,7 +177,7 @@ go build -o sider main.go
 ```
 
 <p align="center">
-  <img src=".github/assets/cli-screenshot.png" alt="Sider v2 Interactive CLI Session" width="100%" style="border-radius: 12px; box-shadow: 0 8px 30px rgba(0,0,0,0.4);" />
+  <img src=".github/assets/cli-screenshot.png" alt="Sider v2 Interactive CLI Session" width="100%" style="border-radius: 12px; box-shadow: 0 8px 30px rgba(0,0,0,0.4);\" />
 </p>
 
 ### 2. Interactive Terminal (`netcat`)
