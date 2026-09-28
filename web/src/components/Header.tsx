@@ -5,13 +5,20 @@ import Link from "next/link";
 import { SiderLogo } from "./SiderLogo";
 
 interface HeaderProps {
-  onFolioClick?: () => void;
-  activeSection?: string;
+  onFolioClick: (e: React.MouseEvent) => void;
 }
 
-export function Header({ onFolioClick }: HeaderProps) {
+export const Header: React.FC<HeaderProps> = ({ onFolioClick }) => {
   return (
-    <header className="w-full bg-[#c4c3b6] px-6 sm:px-10 h-14 flex items-center justify-between border-b border-[#dfdcd5]/60 sticky top-0 z-50">
+    <header
+      className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-6 py-4 transition-all duration-300"
+      style={{
+        backgroundColor: "rgba(196, 195, 182, 0.85)",
+        backdropFilter: "blur(12px)",
+        WebkitBackdropFilter: "blur(12px)",
+        borderBottom: "1px solid rgba(0, 0, 0, 0.08)",
+      }}
+    >
       {/* Brand Identity — Top-Left Header Mark: Bespoke Sider SVG Logo */}
       <a
         href="#top"
@@ -27,11 +34,11 @@ export function Header({ onFolioClick }: HeaderProps) {
         </span>
       </a>
 
-      {/* Navigation — Cloud Console, Ghost Text Link & GitHub Link */}
-      <div className="flex items-center gap-4 sm:gap-6">
+      {/* Navigation — Cloud Console, Ghost Text Link, Sign in, Get started & GitHub Link */}
+      <div className="flex items-center gap-3 sm:gap-4">
         <Link
           href="/console"
-          className="flex items-center gap-1.5 px-2.5 py-1 rounded-[4px] bg-black text-white text-[11px] font-mono hover:bg-neutral-800 transition-colors"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-[6px] bg-[#1b1b1b] text-white text-[12px] font-medium hover:bg-neutral-800 transition-colors shadow-[0px_4px_20px_0px_rgba(0,0,0,0.15)]"
         >
           <span className="w-1.5 h-1.5 rounded-full bg-[#10b981] animate-pulse" />
           <span>Cloud Console</span>
@@ -40,11 +47,26 @@ export function Header({ onFolioClick }: HeaderProps) {
         <a
           href="#interactive-terminal"
           onClick={onFolioClick}
-          className="ghost-text-link text-[12px] text-[#000000] hover:underline hidden sm:inline"
+          className="ghost-text-link text-[12px] text-[#000000] hover:underline hidden md:inline"
           style={{ fontFamily: "var(--font-helvetica-now)", fontWeight: 400 }}
         >
-          Engine Folio & CLI
+          Engine Folio
         </a>
+
+        {/* Auth Buttons: Sign In Pill & Get Started Solid */}
+        <Link
+          href="/sign-in"
+          className="px-3.5 py-1.5 rounded-[40px] border border-[#e0e1e6] bg-white text-[#1b1b1b] text-[12px] font-medium hover:bg-neutral-100 transition-colors hidden sm:inline-block"
+        >
+          Sign in
+        </Link>
+
+        <Link
+          href="/sign-up"
+          className="px-3.5 py-1.5 rounded-[6px] bg-[#1b1b1b] text-white text-[12px] font-medium hover:opacity-90 transition-opacity shadow-[0px_4px_20px_0px_rgba(0,0,0,0.15)] hidden sm:inline-block"
+        >
+          Get started
+        </Link>
 
         <a
           href="https://github.com/AgnibhaRay/sider"
@@ -72,4 +94,4 @@ export function Header({ onFolioClick }: HeaderProps) {
       </div>
     </header>
   );
-}
+};

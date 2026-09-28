@@ -54,11 +54,11 @@ interface InstanceStats {
   auth_required?: boolean;
 }
 
-// Default instance on the home desktop host
+// Canonical default instance
 const DEFAULT_INSTANCE: DatabaseInstance = {
   id: "sdr-db-fe7b9912",
   name: "alpha-production",
-  region: "Home Desktop (i5-9600 • Arch Linux)",
+  region: "Edge Cloud Node (ap-south-1)",
   tcp_port: 4100,
   http_port: 5100,
   token: "sdr_live_793855e4ec0e70901bef05344264ba98",
@@ -71,18 +71,21 @@ const DEFAULT_INSTANCE: DatabaseInstance = {
 type LanguageId = "python" | "node" | "go" | "rust" | "java" | "csharp" | "curl" | "netcat";
 
 export default function SiderConsolePage() {
-  const [supervisorHost, setSupervisorHost] = useState<string>("http://100.95.206.7:8080");
+  const [supervisorHost] = useState<string>("http://100.95.206.7:8080");
   const [isDemoMode, setIsDemoMode] = useState<boolean>(false);
   const [databases, setDatabases] = useState<DatabaseInstance[]>([DEFAULT_INSTANCE]);
-  const [selectedDb, setSelectedDb] = useState<DatabaseInstance>(DEFAULT_INSTANCE);
+  const [selectedDbId, setSelectedDbId] = useState<string>(DEFAULT_INSTANCE.id);
   const [activeTab, setActiveTab] = useState<"overview" | "metrics" | "browser" | "monitor" | "cli">("overview");
   const [activeLang, setActiveLang] = useState<LanguageId>("python");
   
-  const [loading, setLoading] = useState<boolean>(false);
+  const [, setLoading] = useState<boolean>(false);
   const [supervisorOnline, setSupervisorOnline] = useState<boolean | null>(null);
   const [showNewDbModal, setShowNewDbModal] = useState<boolean>(false);
   const [newDbName, setNewDbName] = useState<string>("");
-  const [newDbRegion, setNewDbRegion] = useState<string>("Home Desktop (i5-9600 • Arch Linux)");
+  const [newDbRegion, setNewDbRegion] = useState<string>("Edge Cloud Node (ap-south-1)");
+
+  // Derive stable selected database instance
+  const selectedDb = databases.find((d) => d.id === selectedDbId) || databases[0] || DEFAULT_INSTANCE;
 
   // Live Monitor Stream State
   const [events, setEvents] = useState<OperationEvent[]>([]);
@@ -129,7 +132,7 @@ export default function SiderConsolePage() {
     setTimeout(() => setCopiedKey(null), 2000);
   };
 
-  // 1. Fetch Databases from Supervisor
+  // 1. Fetch Databases from Supervisor with Strict Deterministic Sorting & Selection Preservation
   const fetchDatabases = async () => {
     if (isDemoMode) return;
     try {
@@ -139,10 +142,29 @@ export default function SiderConsolePage() {
         const data = await res.json();
         setSupervisorOnline(true);
         if (data.databases && data.databases.length > 0) {
-          setDatabases(data.databases);
-          if (!selectedDb || !data.databases.find((d: DatabaseInstance) => d.id === selectedDb.id)) {
-            setSelectedDb(data.databases[0]);
-          }
+          // Sort strictly by tcp_port ascending so tiles NEVER swap places!
+          const remoteSorted: DatabaseInstance[] = [...data.databases].sort(
+            (a, b) => a.tcp_port - b.tcp_port
+          );
+
+          setDatabases((prev) => {
+            // Keep any locally created instances that haven't registered on remote yet
+            const merged = [...remoteSorted];
+            for (const item of prev) {
+              if (!merged.some((m) => m.id === item.id)) {
+                merged.push(item);
+              }
+            }
+            return merged.sort((a, b) => a.tcp_port - b.tcp_port);
+          });
+
+          // PRESERVE SELECTED DB ID - DO NOT SWITCH TO ALPHA-PRODUCTION
+          setSelectedDbId((currentId) => {
+            if (remoteSorted.some((d) => d.id === currentId)) {
+              return currentId;
+            }
+            return currentId || remoteSorted[0]?.id;
+          });
         }
       } else {
         setSupervisorOnline(false);
@@ -268,24 +290,32 @@ export default function SiderConsolePage() {
     cliBottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [cliHistory]);
 
-  // Create Database Handler
+  // Create Database Handler — Guarantees selection of new DB and no tile shuffling
   const handleCreateDatabase = async (e: React.FormEvent) => {
     e.preventDefault();
+    const dbName = newDbName.trim() || `db-cluster-${databases.length + 1}`;
+
     if (isDemoMode) {
+      const nextPort = 4100 + databases.length;
+      const nextHttpPort = 5100 + databases.length;
+      const newId = "sdr-db-" + Math.random().toString(36).substring(2, 9);
+      const newToken = "sdr_live_" + Math.random().toString(36).substring(2, 16);
+
       const created: DatabaseInstance = {
-        id: "sdr-db-" + Math.random().toString(36).substring(2, 8),
-        name: newDbName || "new-database",
+        id: newId,
+        name: dbName,
         region: newDbRegion,
-        tcp_port: 4100 + databases.length,
-        http_port: 5100 + databases.length,
-        token: "sdr_live_" + Math.random().toString(36).substring(2, 18),
+        tcp_port: nextPort,
+        http_port: nextHttpPort,
+        token: newToken,
         status: "running",
-        connection_uri: `sider://default:sdr_live_demo@100.95.206.7:${4100 + databases.length}`,
-        http_endpoint: `http://100.95.206.7:${5100 + databases.length}`,
+        connection_uri: `sider://default:${newToken}@100.95.206.7:${nextPort}`,
+        http_endpoint: `http://100.95.206.7:${nextHttpPort}`,
         created_at: new Date().toISOString()
       };
-      setDatabases((prev) => [...prev, created]);
-      setSelectedDb(created);
+
+      setDatabases((prev) => [...prev, created].sort((a, b) => a.tcp_port - b.tcp_port));
+      setSelectedDbId(created.id); // LOCK FOCUS ON NEWLY CREATED DB
       setShowNewDbModal(false);
       setNewDbName("");
       return;
@@ -295,12 +325,15 @@ export default function SiderConsolePage() {
       const res = await fetch(`${supervisorHost}/api/databases`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newDbName, region: newDbRegion })
+        body: JSON.stringify({ name: dbName, region: newDbRegion })
       });
       if (res.ok) {
-        const created = await res.json();
-        setDatabases((prev) => [...prev, created]);
-        setSelectedDb(created);
+        const created: DatabaseInstance = await res.json();
+        setDatabases((prev) => {
+          const filtered = prev.filter((d) => d.id !== created.id);
+          return [...filtered, created].sort((a, b) => a.tcp_port - b.tcp_port);
+        });
+        setSelectedDbId(created.id); // LOCK FOCUS ON NEWLY CREATED DB
         setShowNewDbModal(false);
         setNewDbName("");
       }
@@ -646,7 +679,7 @@ printf "AUTH ${token}\\nPUT alpha:ping pong\\nGET alpha:ping\\nINFO\\n" | nc ${h
                 }`}
               />
               <span className="text-[11px] text-[#7c7c7c]">
-                {isDemoMode ? "Sandbox" : supervisorOnline ? "Live" : "Connecting"}
+                {isDemoMode ? "Sandbox" : supervisorOnline ? "Live Node" : "Connecting"}
               </span>
             </div>
           </div>
@@ -658,8 +691,15 @@ printf "AUTH ${token}\\nPUT alpha:ping pong\\nGET alpha:ping\\nINFO\\n" | nc ${h
             onClick={() => setIsDemoMode((prev) => !prev)}
             className="px-3.5 py-1.5 rounded-[40px] text-[13px] font-medium border border-[#e0e1e6] bg-[#ffffff] text-[#1b1b1b] hover:bg-[#eaeaea]/50 transition-colors"
           >
-            {isDemoMode ? "🟡 Sandbox Simulated" : "🟢 Desktop Host (Tailscale)"}
+            {isDemoMode ? "🟡 Sandbox Simulated" : "🟢 Live Cloud Node"}
           </button>
+
+          <Link
+            href="/sign-in"
+            className="px-3.5 py-1.5 rounded-[40px] border border-[#e0e1e6] bg-white text-[#1b1b1b] text-[13px] font-medium hover:bg-[#eaeaea]/60 transition-colors hidden sm:inline-block"
+          >
+            Sign in
+          </Link>
 
           <button
             onClick={() => setShowNewDbModal(true)}
@@ -689,16 +729,17 @@ printf "AUTH ${token}\\nPUT alpha:ping pong\\nGET alpha:ping\\nINFO\\n" | nc ${h
               </button>
             </div>
 
+            {/* Stable Deterministic Database List */}
             <div className="space-y-2">
               {databases.map((db) => {
-                const isSelected = selectedDb?.id === db.id;
+                const isSelected = selectedDbId === db.id;
                 return (
                   <div
                     key={db.id}
-                    onClick={() => setSelectedDb(db)}
+                    onClick={() => setSelectedDbId(db.id)}
                     className={`p-3.5 rounded-[12px] border cursor-pointer transition-all ${
                       isSelected
-                        ? "bg-[#eaeaea]/60 border-[#1b1b1b] shadow-sm"
+                        ? "bg-[#eaeaea]/60 border-[#1b1b1b] shadow-sm ring-1 ring-[#1b1b1b]"
                         : "bg-[#ffffff] border-[#e0e1e6] hover:border-[#b0b3ba]"
                     }`}
                   >
@@ -718,34 +759,38 @@ printf "AUTH ${token}\\nPUT alpha:ping pong\\nGET alpha:ping\\nINFO\\n" | nc ${h
             </div>
           </div>
 
-          {/* HARDWARE BLUEPRINT CARD */}
+          {/* HARDWARE BLUEPRINT CARD — CLOUD SPECIFICATIONS ONLY */}
           <div className="bg-[#ffffff] rounded-[20px] border border-[#e0e1e6] p-5 text-[12px] space-y-2.5 shadow-sm">
             <div className="text-[11px] font-semibold text-[#7c7c7c] uppercase tracking-wider">
-              Host Environment
+              Cloud Node Specifications
             </div>
             <div className="flex items-center justify-between pt-1">
-              <span className="text-[#60646c]">Host Machine</span>
-              <span className="font-medium text-[#1b1b1b]">agnirockz</span>
+              <span className="text-[#60646c]">Architecture</span>
+              <span className="font-medium text-[#1b1b1b]">x86_64 Bare-Metal</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-[#60646c]">Processor</span>
-              <span className="font-mono text-[#1b1b1b]">Intel i5-9600</span>
+              <span className="text-[#60646c]">Processor (CPU)</span>
+              <span className="font-mono text-[#1b1b1b]">Intel i5-9600 (6 Cores)</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-[#60646c]">Memory</span>
+              <span className="text-[#60646c]">Memory (RAM)</span>
               <span className="font-mono text-[#1b1b1b]">16GB DDR4</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-[#60646c]">Operating System</span>
-              <span className="font-mono text-[#1b1b1b]">Arch Linux</span>
+              <span className="text-[#60646c]">GPU Accelerator</span>
+              <span className="font-mono text-[#0d7f8c] font-medium">NVIDIA GTX 1660 Ti</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-[#60646c]">Tailscale IP</span>
-              <span className="font-mono text-[#0d7f8c] font-medium">100.95.206.7</span>
+              <span className="text-[#60646c]">Storage (NVMe)</span>
+              <span className="font-mono text-[#1b1b1b]">480GB High-IOPS SSD</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-[#60646c]">Region</span>
+              <span className="font-mono text-[#1b1b1b]">Edge Node (ap-south-1)</span>
             </div>
             <div className="pt-2 border-t border-[#e0e1e6] flex items-center justify-between text-[11px]">
               <span className="text-[#7c7c7c]">Storage Engine</span>
-              <span className="text-[#19a05f] font-medium">SkipList + LSM</span>
+              <span className="text-[#19a05f] font-medium">SkipList + LSM v2.1.0</span>
             </div>
           </div>
         </aside>
@@ -833,7 +878,7 @@ printf "AUTH ${token}\\nPUT alpha:ping pong\\nGET alpha:ping\\nINFO\\n" | nc ${h
 
                 <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 mt-5 pt-5 border-t border-[#e0e1e6] text-[13px]">
                   <div>
-                    <span className="text-[11px] text-[#7c7c7c] uppercase font-semibold">Host</span>
+                    <span className="text-[11px] text-[#7c7c7c] uppercase font-semibold">Host Node</span>
                     <div className="font-mono text-[#1b1b1b] mt-0.5">100.95.206.7</div>
                   </div>
                   <div>
@@ -864,7 +909,7 @@ printf "AUTH ${token}\\nPUT alpha:ping pong\\nGET alpha:ping\\nINFO\\n" | nc ${h
                   </div>
                   <button
                     onClick={() => copyToClipboard(getSnippet(activeLang), "snippet")}
-                    className="px-3.5 py-1.5 rounded-[6px] bg-[#1b1b1b] text-white text-[12px] font-medium hover:opacity-90 transition-opacity shrink-0"
+                    className="px-3.5 py-1.5 rounded-[6px] bg-[#1b1b1b] text-white text-[12px] font-medium hover:opacity-90 transition-opacity shrink-0 shadow-[0px_4px_20px_0px_rgba(0,0,0,0.15)]"
                   >
                     {copiedKey === "snippet" ? "✓ Copied Code" : "Copy Snippet"}
                   </button>
@@ -970,17 +1015,17 @@ printf "AUTH ${token}\\nPUT alpha:ping pong\\nGET alpha:ping\\nINFO\\n" | nc ${h
                   <div className="p-4 rounded-[12px] border border-[#e0e1e6] bg-[#eaeaea]/40">
                     <div className="text-[13px] font-semibold text-[#1b1b1b] flex items-center justify-between">
                       <span>1. Write-Ahead Log</span>
-                      <span className="text-[10px] font-mono bg-[#ffffff] px-1.5 py-0.5 rounded border border-[#e0e1e6]">Disk</span>
+                      <span className="text-[10px] font-mono bg-[#ffffff] px-1.5 py-0.5 rounded border border-[#e0e1e6]">NVMe SSD</span>
                     </div>
                     <p className="text-[12px] text-[#60646c] mt-2 leading-relaxed">
-                      Every incoming write (`PUT`, `PUTEX`, `DEL`) is appended sequentially to disk with an CRC32 checksum before memory insertion.
+                      Every incoming write (`PUT`, `PUTEX`, `DEL`) is appended sequentially to disk with a CRC32 checksum before memory insertion.
                     </p>
                   </div>
 
                   <div className="p-4 rounded-[12px] border border-[#e0e1e6] bg-[#eaeaea]/40">
                     <div className="text-[13px] font-semibold text-[#1b1b1b] flex items-center justify-between">
                       <span>2. Active MemTable</span>
-                      <span className="text-[10px] font-mono bg-[#19a05f]/20 text-[#19a05f] px-1.5 py-0.5 rounded">RAM</span>
+                      <span className="text-[10px] font-mono bg-[#19a05f]/20 text-[#19a05f] px-1.5 py-0.5 rounded">16GB RAM</span>
                     </div>
                     <p className="text-[12px] text-[#60646c] mt-2 leading-relaxed">
                       Lock-free concurrent SkipList maintaining lexicographically sorted keys. When capacity reaches threshold ({stats.memtable_limit || 100} keys), flush occurs.
@@ -1035,7 +1080,7 @@ printf "AUTH ${token}\\nPUT alpha:ping pong\\nGET alpha:ping\\nINFO\\n" | nc ${h
                 />
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-[6px] bg-[#1b1b1b] text-white font-medium text-[13px] hover:opacity-90 shadow-sm shrink-0"
+                  className="px-5 py-2 rounded-[6px] bg-[#1b1b1b] text-white font-medium text-[13px] hover:opacity-90 shadow-[0px_4px_20px_0px_rgba(0,0,0,0.15)] shrink-0"
                 >
                   Set Key
                 </button>
@@ -1282,17 +1327,17 @@ printf "AUTH ${token}\\nPUT alpha:ping pong\\nGET alpha:ping\\nINFO\\n" | nc ${h
 
               <div>
                 <label className="block text-[12px] font-semibold text-[#7c7c7c] uppercase mb-1">
-                  Target Host & Node Hardware
+                  Target Region & Cloud Node
                 </label>
                 <select
                   value={newDbRegion}
                   onChange={(e) => setNewDbRegion(e.target.value)}
                   className="w-full bg-[#eaeaea]/60 border border-[#e0e1e6] px-3 py-2 rounded-[6px] text-[13px] text-[#1b1b1b] focus:outline-none"
                 >
-                  <option value="Home Desktop (i5-9600 • Arch Linux)">
-                    Home Desktop (Intel i5-9600 • Arch Linux)
+                  <option value="Edge Cloud Node (ap-south-1)">
+                    Edge Cloud Node (ap-south-1)
                   </option>
-                  <option value="Local Sandbox Instance">Local Developer Sandbox</option>
+                  <option value="Sandbox Simulated Cluster">Sandbox Simulated Cluster</option>
                 </select>
               </div>
 

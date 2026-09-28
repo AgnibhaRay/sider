@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -168,7 +169,7 @@ func (s *Supervisor) CreateDatabase(name, region string) (*DatabaseInstance, err
 		name = fmt.Sprintf("sider-%s", randomHex(3))
 	}
 	if region == "" {
-		region = "Home Cloud (Arch Linux • i5-9600)"
+		region = "Cloud Edge Node (ap-south-1)"
 	}
 
 	tcpPort, httpPort, err := s.findNextFreePorts()
@@ -249,6 +250,9 @@ func (s *Supervisor) ListDatabases() []*DatabaseInstance {
 		db.HTTPEndpoint = fmt.Sprintf("http://%s:%d", host, db.HTTPPort)
 		list = append(list, db)
 	}
+	sort.Slice(list, func(i, j int) bool {
+		return list[i].TCPPort < list[j].TCPPort
+	})
 	return list
 }
 
