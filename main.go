@@ -3,36 +3,53 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"crypto/sha1"
+	"encoding/base64"
 	"encoding/binary"
+	"encoding/json"
+	"flag"
 	"fmt"
 	"hash/fnv"
 	"io"
 	"log"
 	"math/rand"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
 // ==========================================
-// CONFIGURATION
+// CONFIGURATION & GLOBAL DEFAULTS
 // ==========================================
 const (
-	Port            = ":4000"
-	WALFile         = "sider.wal"
-	DataDir         = "data"
-	MemtableLimit   = 100 // Increased for server usage
+	DefaultPort     = ":4000"
+	DefaultHTTPPort = ":4001"
+	DefaultWALFile  = "sider.wal"
+	DefaultDataDir  = "data"
 	MaxLevel        = 16
 	Probability     = 0.5
 	CmdPut          = byte(0)
 	CmdDel          = byte(1)
 	CmdPutTTL       = byte(2)
 	BloomFilterSize = 1024
+)
+
+var (
+	Port          = DefaultPort
+	HTTPPort      = DefaultHTTPPort
+	WALFile       = DefaultWALFile
+	DataDir       = DefaultDataDir
+	MemtableLimit = 100 // Threshold for flushing to SSTable
+	AuthToken     = ""
+	InstanceName  = "sider-primary"
+	StartTime     = time.Now()
 )
 
 // Expiring values are stored as an 8-byte Unix-nanosecond timestamp followed
@@ -136,21 +153,11 @@ func (sl *SkipList) Get(key string) (string, bool, byte) {
 			current = current.Next[i]
 		}
 	}
-	current = current.Next[0]
-	if current != nil && current.Key == key {
-		return current.Value, true, current.Kind
+	target := current.Next[0]
+	if target != nil && target.Key == key {
+		return target.Value, true, target.Kind
 	}
 	return "", false, 0
-}
-
-func (sl *SkipList) Iterator() []*Node {
-	var nodes []*Node
-	current := sl.Head.Next[0]
-	for current != nil {
-		nodes = append(nodes, current)
-		current = current.Next[0]
-	}
-	return nodes
 }
 
 func (sl *SkipList) randomLevel() int {
@@ -161,60 +168,126 @@ func (sl *SkipList) randomLevel() int {
 	return lvl
 }
 
+func (sl *SkipList) Iterator() []*Node {
+	var nodes []*Node
+	curr := sl.Head.Next[0]
+	for curr != nil {
+		nodes = append(nodes, curr)
+		curr = curr.Next[0]
+	}
+	return nodes
+}
+
+func (sl *SkipList) ByteSize() int64 {
+	var bytes int64
+	curr := sl.Head.Next[0]
+	for curr != nil {
+		bytes += int64(len(curr.Key) + len(curr.Value) + 16)
+		curr = curr.Next[0]
+	}
+	return bytes
+}
+
 // ==========================================
-// BLOOM FILTER & HASHING
+// BLOOM FILTER (1024-BYTE BITSET)
 // ==========================================
 
-type BloomFilter struct{ BitSet []byte }
+type BloomFilter struct {
+	BitSet []byte
+}
 
-func NewBloomFilter() *BloomFilter { return &BloomFilter{BitSet: make([]byte, BloomFilterSize)} }
-func (bf *BloomFilter) Add(key string) {
-	h1, h2, h3 := hashKey(key)
-	bf.setBit(h1)
-	bf.setBit(h2)
-	bf.setBit(h3)
+func NewBloomFilter() *BloomFilter {
+	return &BloomFilter{BitSet: make([]byte, BloomFilterSize)}
 }
-func (bf *BloomFilter) MayContain(key string) bool {
-	h1, h2, h3 := hashKey(key)
-	return bf.checkBit(h1) && bf.checkBit(h2) && bf.checkBit(h3)
-}
-func (bf *BloomFilter) setBit(pos uint32) {
-	bf.BitSet[(pos/8)%uint32(BloomFilterSize)] |= (1 << (pos % 8))
-}
-func (bf *BloomFilter) checkBit(pos uint32) bool {
-	return (bf.BitSet[(pos/8)%uint32(BloomFilterSize)] & (1 << (pos % 8))) != 0
-}
-func hashKey(key string) (uint32, uint32, uint32) {
+
+func (bf *BloomFilter) hash1(key string) uint32 {
 	h := fnv.New32a()
 	h.Write([]byte(key))
-	v1 := h.Sum32()
-	return v1, v1 * 16777619, v1 * 16777619 * 16777619
+	return h.Sum32()
+}
+
+func (bf *BloomFilter) hash2(key string) uint32 {
+	h := fnv.New32()
+	h.Write([]byte(key))
+	return h.Sum32()
+}
+
+func (bf *BloomFilter) Add(key string) {
+	totalBits := uint32(BloomFilterSize * 8)
+	idx1 := bf.hash1(key) % totalBits
+	idx2 := bf.hash2(key) % totalBits
+
+	bf.BitSet[idx1/8] |= 1 << (idx1 % 8)
+	bf.BitSet[idx2/8] |= 1 << (idx2 % 8)
+}
+
+func (bf *BloomFilter) MayContain(key string) bool {
+	totalBits := uint32(BloomFilterSize * 8)
+	idx1 := bf.hash1(key) % totalBits
+	idx2 := bf.hash2(key) % totalBits
+
+	if (bf.BitSet[idx1/8] & (1 << (idx1 % 8))) == 0 {
+		return false
+	}
+	if (bf.BitSet[idx2/8] & (1 << (idx2 % 8))) == 0 {
+		return false
+	}
+	return true
 }
 
 // ==========================================
-// WAL & SSTABLE
+// WRITE-AHEAD LOG (WAL)
 // ==========================================
 
-type WAL struct{ file *os.File }
-
-func OpenWAL() (*WAL, error) {
-	f, err := os.OpenFile(WALFile, os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
-	return &WAL{file: f}, err
+type WAL struct {
+	file *os.File
+	mu   sync.Mutex
+	path string
 }
+
+func OpenWAL(path string) (*WAL, error) {
+	dir := filepath.Dir(path)
+	if dir != "" && dir != "." {
+		os.MkdirAll(dir, 0755)
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
+	if err != nil {
+		return nil, err
+	}
+	return &WAL{file: f, path: path}, nil
+}
+
 func (w *WAL) WriteEntry(key, value string, kind byte) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
 	buf := new(bytes.Buffer)
 	buf.WriteByte(kind)
 	binary.Write(buf, binary.LittleEndian, int32(len(key)))
 	binary.Write(buf, binary.LittleEndian, int32(len(value)))
 	buf.WriteString(key)
 	buf.WriteString(value)
+
 	_, err := w.file.Write(buf.Bytes())
-	return err
+	if err != nil {
+		return err
+	}
+	return w.file.Sync()
 }
-func (w *WAL) Clear() { w.file.Close(); os.Truncate(WALFile, 0) }
+
+func (w *WAL) Clear() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.file.Close()
+	os.Truncate(w.path, 0)
+}
+
 func (w *WAL) Recover(sl *SkipList) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	w.file.Seek(0, 0)
 	r := bufio.NewReader(w.file)
+
 	for {
 		kind, err := r.ReadByte()
 		if err != nil {
@@ -231,12 +304,22 @@ func (w *WAL) Recover(sl *SkipList) {
 	}
 }
 
-func FlushMemTable(sl *SkipList) {
-	if _, err := os.Stat(DataDir); os.IsNotExist(err) {
-		os.Mkdir(DataDir, 0755)
+// ==========================================
+// SSTABLE DISK PERSISTENCE & COMPACTION
+// ==========================================
+
+func FlushMemTable(sl *SkipList, dataDir string) {
+	if _, err := os.Stat(dataDir); os.IsNotExist(err) {
+		os.MkdirAll(dataDir, 0755)
 	}
-	f, _ := os.Create(fmt.Sprintf("%s/sstable_%d.db", DataDir, time.Now().UnixNano()))
+	filePath := filepath.Join(dataDir, fmt.Sprintf("sstable_%d.db", time.Now().UnixNano()))
+	f, err := os.Create(filePath)
+	if err != nil {
+		log.Printf("Error creating SSTable %s: %v", filePath, err)
+		return
+	}
 	defer f.Close()
+
 	bf := NewBloomFilter()
 	for _, n := range sl.Iterator() {
 		bf.Add(n.Key)
@@ -251,15 +334,76 @@ func FlushMemTable(sl *SkipList) {
 	binary.Write(f, binary.LittleEndian, int64(offset))
 }
 
-func SearchSSTables(key string) (string, bool, byte) {
-	files, _ := os.ReadDir(DataDir)
+func SearchSSTables(key string, dataDir string) (string, bool, byte) {
+	files, err := os.ReadDir(dataDir)
+	if err != nil {
+		return "", false, 0
+	}
 	for i := len(files) - 1; i >= 0; i-- {
-		if strings.HasPrefix(files[i].Name(), "temp_") {
+		if strings.HasPrefix(files[i].Name(), "temp_") || !strings.HasSuffix(files[i].Name(), ".db") {
 			continue
 		}
-		path := filepath.Join(DataDir, files[i].Name())
+		path := filepath.Join(dataDir, files[i].Name())
 		if v, found, k := searchFile(path, key); found {
 			return v, true, k
+		}
+	}
+	return "", false, 0
+}
+
+func searchFile(path, key string) (string, bool, byte) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", false, 0
+	}
+	defer f.Close()
+
+	stat, err := f.Stat()
+	if err != nil {
+		return "", false, 0
+	}
+	size := stat.Size()
+	if size < 8+BloomFilterSize {
+		return "", false, 0
+	}
+
+	f.Seek(size-8, 0)
+	var dataEndOffset int64
+	binary.Read(f, binary.LittleEndian, &dataEndOffset)
+
+	f.Seek(dataEndOffset, 0)
+	bfBytes := make([]byte, BloomFilterSize)
+	io.ReadFull(f, bfBytes)
+
+	bf := &BloomFilter{BitSet: bfBytes}
+	if !bf.MayContain(key) {
+		return "", false, 0
+	}
+
+	f.Seek(0, 0)
+	r := bufio.NewReader(f)
+	currentOffset := int64(0)
+
+	for currentOffset < dataEndOffset {
+		kind, err := r.ReadByte()
+		if err != nil {
+			break
+		}
+		currentOffset++
+
+		var kl, vl int32
+		binary.Read(r, binary.LittleEndian, &kl)
+		binary.Read(r, binary.LittleEndian, &vl)
+		currentOffset += 8
+
+		kBytes := make([]byte, kl)
+		vBytes := make([]byte, vl)
+		io.ReadFull(r, kBytes)
+		io.ReadFull(r, vBytes)
+		currentOffset += int64(kl + vl)
+
+		if string(kBytes) == key {
+			return string(vBytes), true, kind
 		}
 	}
 	return "", false, 0
@@ -273,136 +417,98 @@ func collectKeysWithPrefixFromFile(path, prefix string, keys map[string]struct{}
 	defer f.Close()
 
 	stat, err := f.Stat()
-	if err != nil || stat.Size() < 8 {
+	if err != nil || stat.Size() < 8+BloomFilterSize {
 		return
 	}
-	f.Seek(stat.Size()-8, 0)
-	var limit int64
-	if binary.Read(f, binary.LittleEndian, &limit) != nil || limit < 0 || limit > stat.Size()-8 {
-		return
-	}
-	f.Seek(0, 0)
-	r := bufio.NewReader(f)
-	current := int64(0)
-	for current < limit {
-		_, err := r.ReadByte()
-		if err != nil {
-			return
-		}
-		current++
-		var keyLen, valueLen int32
-		if binary.Read(r, binary.LittleEndian, &keyLen) != nil || binary.Read(r, binary.LittleEndian, &valueLen) != nil {
-			return
-		}
-		current += 8
-		if keyLen < 0 || valueLen < 0 {
-			return
-		}
-		keyBytes := make([]byte, keyLen)
-		valueBytes := make([]byte, valueLen)
-		if _, err := io.ReadFull(r, keyBytes); err != nil {
-			return
-		}
-		if _, err := io.ReadFull(r, valueBytes); err != nil {
-			return
-		}
-		current += int64(keyLen + valueLen)
-		if strings.HasPrefix(string(keyBytes), prefix) {
-			keys[string(keyBytes)] = struct{}{}
-		}
-	}
-}
+	size := stat.Size()
 
-func searchFile(path, key string) (string, bool, byte) {
-	f, err := os.Open(path)
-	if err != nil {
-		return "", false, 0
-	}
-	defer f.Close()
-
-	stat, _ := f.Stat()
-	if stat.Size() < 8 {
-		return "", false, 0
-	}
-	f.Seek(stat.Size()-8, 0)
-	var bfOffset int64
-	binary.Read(f, binary.LittleEndian, &bfOffset)
-
-	f.Seek(bfOffset, 0)
-	bfBytes := make([]byte, BloomFilterSize)
-	io.ReadFull(f, bfBytes)
-	if !(&BloomFilter{BitSet: bfBytes}).MayContain(key) {
-		return "", false, 0
-	}
+	f.Seek(size-8, 0)
+	var dataEndOffset int64
+	binary.Read(f, binary.LittleEndian, &dataEndOffset)
 
 	f.Seek(0, 0)
 	r := bufio.NewReader(f)
-	readBytes := int64(0)
-	for readBytes < bfOffset {
+	currentOffset := int64(0)
+
+	for currentOffset < dataEndOffset {
 		kind, err := r.ReadByte()
 		if err != nil {
 			break
 		}
-		readBytes++
-		var kLen, vLen int32
-		binary.Read(r, binary.LittleEndian, &kLen)
-		binary.Read(r, binary.LittleEndian, &vLen)
-		readBytes += 8
-		kBytes := make([]byte, kLen)
-		vBytes := make([]byte, vLen)
+		currentOffset++
+
+		var kl, vl int32
+		binary.Read(r, binary.LittleEndian, &kl)
+		binary.Read(r, binary.LittleEndian, &vl)
+		currentOffset += 8
+
+		kBytes := make([]byte, kl)
+		vBytes := make([]byte, vl)
 		io.ReadFull(r, kBytes)
 		io.ReadFull(r, vBytes)
-		readBytes += int64(kLen + vLen)
-		if string(kBytes) == key {
-			return string(vBytes), true, kind
+		currentOffset += int64(kl + vl)
+
+		key := string(kBytes)
+		if strings.HasPrefix(key, prefix) {
+			if kind == CmdDel || isExpired(kind, string(vBytes), time.Now()) {
+				delete(keys, key)
+			} else {
+				keys[key] = struct{}{}
+			}
 		}
 	}
-	return "", false, 0
 }
 
-// ==========================================
-// COMPACTION
-// ==========================================
-
-// Simplified compaction: merges all files into one.
 func Compact(e *Engine) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	fmt.Println(">> Compaction Started")
-	files, _ := os.ReadDir(DataDir)
+	dataDir := e.DataDir
+	files, err := os.ReadDir(dataDir)
+	if err != nil {
+		return
+	}
 	var paths []string
 	for _, f := range files {
-		if strings.HasSuffix(f.Name(), ".db") {
-			paths = append(paths, filepath.Join(DataDir, f.Name()))
+		if strings.HasSuffix(f.Name(), ".db") && !strings.HasPrefix(f.Name(), "temp_") {
+			paths = append(paths, filepath.Join(dataDir, f.Name()))
 		}
+	}
+	if len(paths) <= 1 {
+		return // Nothing to compact
 	}
 	sort.Strings(paths)
 
-	// In a real DB, we would use K-Way Merge Sort here with iterators.
-	// For this snippet, we load keys into a map to dedup (memory heavy but simple for demo)
 	type record struct {
 		value string
 		kind  byte
 	}
 	merged := make(map[string]record)
 
-	// Read oldest to newest
 	for _, p := range paths {
-		f, _ := os.Open(p)
-		r := bufio.NewReader(f)
-
+		f, err := os.Open(p)
+		if err != nil {
+			continue
+		}
 		stat, _ := f.Stat()
 		size := stat.Size()
-		// Get Footer
+		if size < 8+BloomFilterSize {
+			f.Close()
+			continue
+		}
+
 		f.Seek(size-8, 0)
 		var limit int64
 		binary.Read(f, binary.LittleEndian, &limit)
 		f.Seek(0, 0)
 
+		r := bufio.NewReader(f)
 		current := int64(0)
 		for current < limit {
-			kind, _ := r.ReadByte()
+			kind, err := r.ReadByte()
+			if err != nil {
+				break
+			}
 			current++
 			var kl, vl int32
 			binary.Read(r, binary.LittleEndian, &kl)
@@ -424,12 +530,13 @@ func Compact(e *Engine) {
 		f.Close()
 	}
 
-	// Write new file
-	newFile := fmt.Sprintf("%s/sstable_%d_compacted.db", DataDir, time.Now().UnixNano())
-	f, _ := os.Create(newFile)
+	newFile := filepath.Join(dataDir, fmt.Sprintf("sstable_%d_compacted.db", time.Now().UnixNano()))
+	f, err := os.Create(newFile)
+	if err != nil {
+		return
+	}
 	bf := NewBloomFilter()
 
-	// Write map to file
 	for k, record := range merged {
 		bf.Add(k)
 		f.Write([]byte{record.kind})
@@ -443,52 +550,91 @@ func Compact(e *Engine) {
 	binary.Write(f, binary.LittleEndian, int64(off))
 	f.Close()
 
-	// Remove old files
 	for _, p := range paths {
 		os.Remove(p)
 	}
-	fmt.Println(">> Compaction Done")
 }
 
 // ==========================================
-// ENGINE & NETWORK SERVER
+// ENGINE
 // ==========================================
 
 type Engine struct {
-	MemTable *SkipList
-	Wal      *WAL
-	mu       sync.RWMutex
+	MemTable      *SkipList
+	Wal           *WAL
+	DataDir       string
+	WALPath       string
+	AuthToken     string
+	TotalOps      int64
+	OpsThisSecond int64
+	OpsPerSec     float64
+	mu            sync.RWMutex
 }
 
 func NewEngine() *Engine {
+	return NewEngineWithConfig(DataDir, WALFile, AuthToken)
+}
+
+func NewEngineWithConfig(dataDir, walPath, authToken string) *Engine {
+	if _, err := os.Stat(dataDir); os.IsNotExist(err) {
+		os.MkdirAll(dataDir, 0755)
+	}
 	sl := NewSkipList()
-	wal, _ := OpenWAL()
-	wal.Recover(sl)
-	return &Engine{MemTable: sl, Wal: wal}
+	wal, _ := OpenWAL(walPath)
+	if wal != nil {
+		wal.Recover(sl)
+	}
+	e := &Engine{
+		MemTable:  sl,
+		Wal:       wal,
+		DataDir:   dataDir,
+		WALPath:   walPath,
+		AuthToken: authToken,
+	}
+
+	// Rolling ops/sec counter ticker
+	go func() {
+		ticker := time.NewTicker(1 * time.Second)
+		for range ticker.C {
+			ops := atomic.SwapInt64(&e.OpsThisSecond, 0)
+			e.mu.Lock()
+			e.OpsPerSec = float64(ops)
+			e.mu.Unlock()
+		}
+	}()
+
+	return e
 }
 
 func (e *Engine) putLocked(key, value string, kind byte) {
-	if err := e.Wal.WriteEntry(key, value, kind); err != nil {
-		log.Printf("WAL write failed for key %q: %v", key, err)
-		return
+	if e.Wal != nil {
+		if err := e.Wal.WriteEntry(key, value, kind); err != nil {
+			log.Printf("WAL write failed for key %q: %v", key, err)
+			return
+		}
 	}
 	e.MemTable.Put(key, value, kind)
 	if e.MemTable.Size >= MemtableLimit {
-		fmt.Println(">> MemTable full. Flushing...")
-		FlushMemTable(e.MemTable)
+		FlushMemTable(e.MemTable, e.DataDir)
 		e.MemTable = NewSkipList()
-		e.Wal.Clear()
-		e.Wal, _ = OpenWAL()
+		if e.Wal != nil {
+			e.Wal.Clear()
+			e.Wal, _ = OpenWAL(e.WALPath)
+		}
 	}
 }
 
 func (e *Engine) Put(key, value string) {
+	atomic.AddInt64(&e.TotalOps, 1)
+	atomic.AddInt64(&e.OpsThisSecond, 1)
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.putLocked(key, value, CmdPut)
 }
 
 func (e *Engine) PutWithTTL(key, value string, ttl time.Duration) {
+	atomic.AddInt64(&e.TotalOps, 1)
+	atomic.AddInt64(&e.OpsThisSecond, 1)
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	expiresAt := time.Now().Add(ttl)
@@ -496,34 +642,46 @@ func (e *Engine) PutWithTTL(key, value string, ttl time.Duration) {
 }
 
 func (e *Engine) Delete(key string) {
+	atomic.AddInt64(&e.TotalOps, 1)
+	atomic.AddInt64(&e.OpsThisSecond, 1)
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.putLocked(key, "", CmdDel)
 }
 
-func (e *Engine) lookupLocked(key string) (string, bool, byte) {
+func (e *Engine) lookupLocked(key string) (string, bool, byte, string) {
 	if value, found, kind := e.MemTable.Get(key); found {
-		return value, true, kind
+		return value, true, kind, "memtable"
 	}
-	return SearchSSTables(key)
+	v, found, k := SearchSSTables(key, e.DataDir)
+	return v, found, k, "sstable"
 }
 
 func (e *Engine) Get(key string) string {
+	val, _ := e.GetWithTier(key)
+	return val
+}
+
+func (e *Engine) GetWithTier(key string) (string, string) {
+	atomic.AddInt64(&e.TotalOps, 1)
+	atomic.AddInt64(&e.OpsThisSecond, 1)
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-	if value, found, kind := e.lookupLocked(key); found {
+	if value, found, kind, tier := e.lookupLocked(key); found {
 		if visible, ok := visibleValue(value, kind, time.Now()); ok {
-			return visible
+			return visible, tier
 		}
 	}
-	return "(nil)"
+	return "(nil)", "none"
 }
 
 func (e *Engine) Expire(key string, ttl time.Duration) bool {
+	atomic.AddInt64(&e.TotalOps, 1)
+	atomic.AddInt64(&e.OpsThisSecond, 1)
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	value, found, kind := e.lookupLocked(key)
+	value, found, kind, _ := e.lookupLocked(key)
 	current, visible := visibleValue(value, kind, time.Now())
 	if !found || !visible {
 		return false
@@ -533,10 +691,12 @@ func (e *Engine) Expire(key string, ttl time.Duration) bool {
 }
 
 func (e *Engine) TTL(key string) int64 {
+	atomic.AddInt64(&e.TotalOps, 1)
+	atomic.AddInt64(&e.OpsThisSecond, 1)
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 
-	value, found, kind := e.lookupLocked(key)
+	value, found, kind, _ := e.lookupLocked(key)
 	if !found || kind == CmdDel || isExpired(kind, value, time.Now()) {
 		return -2
 	}
@@ -555,6 +715,8 @@ func (e *Engine) TTL(key string) int64 {
 }
 
 func (e *Engine) ClearPrefix(prefix string) int {
+	atomic.AddInt64(&e.TotalOps, 1)
+	atomic.AddInt64(&e.OpsThisSecond, 1)
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -564,10 +726,10 @@ func (e *Engine) ClearPrefix(prefix string) int {
 			keys[node.Key] = struct{}{}
 		}
 	}
-	if files, err := os.ReadDir(DataDir); err == nil {
+	if files, err := os.ReadDir(e.DataDir); err == nil {
 		for _, file := range files {
 			if strings.HasSuffix(file.Name(), ".db") {
-				collectKeysWithPrefixFromFile(filepath.Join(DataDir, file.Name()), prefix, keys)
+				collectKeysWithPrefixFromFile(filepath.Join(e.DataDir, file.Name()), prefix, keys)
 			}
 		}
 	}
@@ -578,9 +740,217 @@ func (e *Engine) ClearPrefix(prefix string) int {
 	return len(keys)
 }
 
+type KeyInfo struct {
+	Key     string `json:"key"`
+	Value   string `json:"value"`
+	TTL     int64  `json:"ttl"`
+	Tier    string `json:"tier"`
+	Expires string `json:"expires,omitempty"`
+}
+
+func (e *Engine) ListKeys(pattern string) []KeyInfo {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+
+	activeMap := make(map[string]KeyInfo)
+
+	// Collect from SSTables first
+	if files, err := os.ReadDir(e.DataDir); err == nil {
+		for _, file := range files {
+			if strings.HasSuffix(file.Name(), ".db") {
+				filePath := filepath.Join(e.DataDir, file.Name())
+				f, err := os.Open(filePath)
+				if err != nil {
+					continue
+				}
+				stat, _ := f.Stat()
+				if stat.Size() >= 8+BloomFilterSize {
+					f.Seek(stat.Size()-8, 0)
+					var limit int64
+					binary.Read(f, binary.LittleEndian, &limit)
+					f.Seek(0, 0)
+					r := bufio.NewReader(f)
+					cur := int64(0)
+					for cur < limit {
+						kind, err := r.ReadByte()
+						if err != nil {
+							break
+						}
+						cur++
+						var kl, vl int32
+						binary.Read(r, binary.LittleEndian, &kl)
+						binary.Read(r, binary.LittleEndian, &vl)
+						cur += 8
+						k := make([]byte, kl)
+						v := make([]byte, vl)
+						io.ReadFull(r, k)
+						io.ReadFull(r, v)
+						cur += int64(kl + vl)
+
+						kStr := string(k)
+						if pattern != "" && !strings.Contains(kStr, pattern) {
+							continue
+						}
+						if kind == CmdDel || isExpired(kind, string(v), time.Now()) {
+							delete(activeMap, kStr)
+						} else {
+							val, _ := visibleValue(string(v), kind, time.Now())
+							activeMap[kStr] = KeyInfo{
+								Key:   kStr,
+								Value: val,
+								TTL:   -1,
+								Tier:  "sstable",
+							}
+						}
+					}
+				}
+				f.Close()
+			}
+		}
+	}
+
+	// Overlay with MemTable
+	now := time.Now()
+	for _, node := range e.MemTable.Iterator() {
+		if pattern != "" && !strings.Contains(node.Key, pattern) {
+			continue
+		}
+		if node.Kind == CmdDel || isExpired(node.Kind, node.Value, now) {
+			delete(activeMap, node.Key)
+		} else {
+			val, _ := visibleValue(node.Value, node.Kind, now)
+			ttlSec := int64(-1)
+			expiresStr := ""
+			if node.Kind == CmdPutTTL {
+				if _, expAt, ok := decodeExpiringValue(node.Value); ok {
+					ttlSec = int64(time.Until(expAt) / time.Second)
+					expiresStr = expAt.Format(time.RFC3339)
+				}
+			}
+			activeMap[node.Key] = KeyInfo{
+				Key:     node.Key,
+				Value:   val,
+				TTL:     ttlSec,
+				Tier:    "memtable",
+				Expires: expiresStr,
+			}
+		}
+	}
+
+	res := make([]KeyInfo, 0, len(activeMap))
+	for _, ki := range activeMap {
+		res = append(res, ki)
+	}
+	sort.Slice(res, func(i, j int) bool {
+		return res[i].Key < res[j].Key
+	})
+	return res
+}
+
+func (e *Engine) Stats() map[string]interface{} {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+
+	var sstablesCount int
+	var sstablesBytes int64
+	if files, err := os.ReadDir(e.DataDir); err == nil {
+		for _, f := range files {
+			if strings.HasSuffix(f.Name(), ".db") {
+				sstablesCount++
+				if info, err := f.Info(); err == nil {
+					sstablesBytes += info.Size()
+				}
+			}
+		}
+	}
+
+	var walBytes int64
+	if e.Wal != nil && e.Wal.file != nil {
+		if stat, err := e.Wal.file.Stat(); err == nil {
+			walBytes = stat.Size()
+		}
+	}
+
+	return map[string]interface{}{
+		"status":            "online",
+		"name":              InstanceName,
+		"version":           "2.1.0",
+		"port":              Port,
+		"http_port":         HTTPPort,
+		"uptime_seconds":    int64(time.Since(StartTime).Seconds()),
+		"memtable_entries":  e.MemTable.Size,
+		"memtable_bytes":    e.MemTable.ByteSize(),
+		"memtable_limit":    MemtableLimit,
+		"sstables_count":    sstablesCount,
+		"sstables_bytes":    sstablesBytes,
+		"wal_bytes":         walBytes,
+		"total_ops":         atomic.LoadInt64(&e.TotalOps),
+		"ops_per_sec":       e.OpsPerSec,
+		"connected_clients": atomic.LoadInt64(&activeClientsCount),
+		"auth_required":     e.AuthToken != "",
+	}
+}
+
+// ==========================================
+// REAL-TIME TELEMETRY & EVENT BROADCAST BUS
+// ==========================================
+
+type OperationEvent struct {
+	Timestamp   int64    `json:"timestamp"`
+	ClientAddr  string   `json:"client_addr"`
+	Command     string   `json:"command"`
+	Key         string   `json:"key,omitempty"`
+	Args        []string `json:"args,omitempty"`
+	LatencyUs   int64    `json:"latency_us"`
+	Status      string   `json:"status"`
+	StorageTier string   `json:"storage_tier,omitempty"`
+}
+
+type TelemetryHub struct {
+	subscribers map[chan OperationEvent]struct{}
+	mu          sync.RWMutex
+}
+
+var telemetryHub = &TelemetryHub{
+	subscribers: make(map[chan OperationEvent]struct{}),
+}
+
+func (h *TelemetryHub) Subscribe() chan OperationEvent {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	ch := make(chan OperationEvent, 128)
+	h.subscribers[ch] = struct{}{}
+	return ch
+}
+
+func (h *TelemetryHub) Unsubscribe(ch chan OperationEvent) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	delete(h.subscribers, ch)
+	close(ch)
+}
+
+func (h *TelemetryHub) Broadcast(event OperationEvent) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	for ch := range h.subscribers {
+		select {
+		case ch <- event:
+		default:
+			// Non-blocking drop if consumer is too slow
+		}
+	}
+}
+
+// ==========================================
+// PUB/SUB BROKER
+// ==========================================
+
 type Client struct {
-	conn    net.Conn
-	writeMu sync.Mutex
+	conn          net.Conn
+	writeMu       sync.Mutex
+	authenticated bool
+	remoteAddr    string
 }
 
 func (c *Client) writeLine(line string) error {
@@ -649,147 +1019,491 @@ func (b *Broker) Publish(channel, message string) int {
 	return delivered
 }
 
+var broker = NewBroker()
+var activeClientsCount int64
+
+// ==========================================
+// TCP COMMAND EXECUTION & NETWORK LOOP
+// ==========================================
+
+func executeCommand(e *Engine, client *Client, line string) string {
+	start := time.Now()
+	line = strings.TrimSpace(line)
+	parts := strings.SplitN(line, " ", 3)
+	if len(parts) == 0 || parts[0] == "" {
+		return ""
+	}
+
+	cmd := strings.ToUpper(parts[0])
+	resp := ""
+	status := "OK"
+	targetKey := ""
+	tier := ""
+
+	// Check authentication if required
+	if e.AuthToken != "" && !client.authenticated {
+		if cmd != "AUTH" && cmd != "PING" {
+			latency := time.Since(start).Microseconds()
+			telemetryHub.Broadcast(OperationEvent{
+				Timestamp:  time.Now().UnixMilli(),
+				ClientAddr: client.remoteAddr,
+				Command:    cmd,
+				LatencyUs:  latency,
+				Status:     "ERR NOAUTH",
+			})
+			return "ERR NOAUTH Authentication required"
+		}
+	}
+
+	switch cmd {
+	case "AUTH":
+		if len(parts) < 2 {
+			resp = "ERR Usage: AUTH <password>"
+			status = "ERR"
+		} else if e.AuthToken == "" || parts[1] == e.AuthToken {
+			client.authenticated = true
+			resp = "OK"
+			status = "AUTH OK"
+		} else {
+			resp = "ERR invalid password"
+			status = "ERR AUTH"
+		}
+
+	case "PING":
+		if len(parts) > 1 {
+			resp = parts[1]
+		} else {
+			resp = "PONG"
+		}
+
+	case "PUT":
+		if len(parts) < 3 {
+			resp = "ERR Usage: PUT <key> <val>"
+			status = "ERR"
+		} else {
+			targetKey = parts[1]
+			e.Put(parts[1], parts[2])
+			resp = "OK"
+			tier = "memtable"
+		}
+
+	case "PUTEX":
+		putParts := strings.SplitN(line, " ", 4)
+		if len(putParts) < 4 {
+			resp = "ERR Usage: PUTEX <key> <ttl-seconds> <val>"
+			status = "ERR"
+		} else {
+			seconds, err := strconv.ParseInt(putParts[2], 10, 64)
+			if err != nil || seconds <= 0 {
+				resp = "ERR TTL must be a positive integer"
+				status = "ERR"
+			} else {
+				targetKey = putParts[1]
+				e.PutWithTTL(putParts[1], putParts[3], time.Duration(seconds)*time.Second)
+				resp = "OK"
+				tier = "memtable"
+			}
+		}
+
+	case "GET":
+		if len(parts) < 2 {
+			resp = "ERR Usage: GET <key>"
+			status = "ERR"
+		} else {
+			targetKey = parts[1]
+			val, t := e.GetWithTier(parts[1])
+			resp = val
+			tier = t
+		}
+
+	case "DEL":
+		if len(parts) < 2 {
+			resp = "ERR Usage: DEL <key>"
+			status = "ERR"
+		} else {
+			targetKey = parts[1]
+			e.Delete(parts[1])
+			resp = "OK"
+			tier = "memtable"
+		}
+
+	case "EXPIRE":
+		if len(parts) < 3 {
+			resp = "ERR Usage: EXPIRE <key> <ttl-seconds>"
+			status = "ERR"
+		} else {
+			seconds, err := strconv.ParseInt(parts[2], 10, 64)
+			if err != nil || seconds <= 0 {
+				resp = "ERR TTL must be a positive integer"
+				status = "ERR"
+			} else {
+				targetKey = parts[1]
+				if e.Expire(parts[1], time.Duration(seconds)*time.Second) {
+					resp = "1"
+				} else {
+					resp = "0"
+				}
+				tier = "memtable"
+			}
+		}
+
+	case "TTL":
+		if len(parts) < 2 {
+			resp = "ERR Usage: TTL <key>"
+			status = "ERR"
+		} else {
+			targetKey = parts[1]
+			resp = strconv.FormatInt(e.TTL(parts[1]), 10)
+		}
+
+	case "CLEAR":
+		if len(parts) < 2 {
+			resp = "ERR Usage: CLEAR <key-prefix>"
+			status = "ERR"
+		} else {
+			targetKey = parts[1]
+			count := e.ClearPrefix(parts[1])
+			resp = "CLEARED " + strconv.Itoa(count)
+		}
+
+	case "SUBSCRIBE":
+		if len(parts) < 2 {
+			resp = "ERR Usage: SUBSCRIBE <channel>"
+			status = "ERR"
+		} else {
+			targetKey = parts[1]
+			broker.Subscribe(client, parts[1])
+			resp = "SUBSCRIBED " + parts[1]
+		}
+
+	case "UNSUBSCRIBE":
+		if len(parts) < 2 {
+			resp = "ERR Usage: UNSUBSCRIBE <channel>"
+			status = "ERR"
+		} else {
+			targetKey = parts[1]
+			broker.Unsubscribe(client, parts[1])
+			resp = "UNSUBSCRIBED " + parts[1]
+		}
+
+	case "PUBLISH":
+		if len(parts) < 3 {
+			resp = "ERR Usage: PUBLISH <channel> <message>"
+			status = "ERR"
+		} else {
+			targetKey = parts[1]
+			delivered := broker.Publish(parts[1], parts[2])
+			resp = "PUBLISHED " + strconv.Itoa(delivered)
+		}
+
+	case "COMPACT":
+		go Compact(e)
+		resp = "OK Compact Started"
+
+	case "INFO":
+		stats := e.Stats()
+		var b strings.Builder
+		b.WriteString("# Sider Server\r\n")
+		for k, v := range stats {
+			b.WriteString(fmt.Sprintf("%s:%v\r\n", k, v))
+		}
+		resp = b.String()
+
+	default:
+		resp = "ERR Unknown Command"
+		status = "ERR"
+	}
+
+	latencyUs := time.Since(start).Microseconds()
+	telemetryHub.Broadcast(OperationEvent{
+		Timestamp:   time.Now().UnixMilli(),
+		ClientAddr:  client.remoteAddr,
+		Command:     cmd,
+		Key:         targetKey,
+		LatencyUs:   latencyUs,
+		Status:      status,
+		StorageTier: tier,
+	})
+
+	return resp
+}
+
 func handleConnection(conn net.Conn, e *Engine) {
 	defer conn.Close()
-	client := &Client{conn: conn}
-	defer broker.RemoveClient(client)
-	reader := bufio.NewReader(conn)
+	atomic.AddInt64(&activeClientsCount, 1)
+	defer atomic.AddInt64(&activeClientsCount, -1)
 
+	client := &Client{
+		conn:          conn,
+		remoteAddr:    conn.RemoteAddr().String(),
+		authenticated: e.AuthToken == "", // Auto-authenticated if no token set
+	}
+	defer broker.RemoveClient(client)
+
+	reader := bufio.NewReader(conn)
 	for {
-		// Read command line
 		line, err := reader.ReadString('\n')
 		if err != nil {
 			break
-		} // Client disconnected
-
-		line = strings.TrimSpace(line)
-		parts := strings.SplitN(line, " ", 3)
-		if len(parts) == 0 || parts[0] == "" {
-			continue
 		}
-
-		cmd := strings.ToUpper(parts[0])
-
-		switch cmd {
-		case "PUT":
-			if len(parts) < 3 {
-				client.writeLine("ERR Usage: PUT <key> <val>")
-				continue
-			}
-			e.Put(parts[1], parts[2])
-			client.writeLine("OK")
-
-		case "PUTEX":
-			putParts := strings.SplitN(line, " ", 4)
-			if len(putParts) < 4 {
-				client.writeLine("ERR Usage: PUTEX <key> <ttl-seconds> <val>")
-				continue
-			}
-			seconds, err := strconv.ParseInt(putParts[2], 10, 64)
-			if err != nil || seconds <= 0 {
-				client.writeLine("ERR TTL must be a positive integer")
-				continue
-			}
-			e.PutWithTTL(putParts[1], putParts[3], time.Duration(seconds)*time.Second)
-			client.writeLine("OK")
-
-		case "GET":
-			if len(parts) < 2 {
-				client.writeLine("ERR Usage: GET <key>")
-				continue
-			}
-			val := e.Get(parts[1])
-			client.writeLine(val)
-
-		case "DEL":
-			if len(parts) < 2 {
-				client.writeLine("ERR Usage: DEL <key>")
-				continue
-			}
-			e.Delete(parts[1])
-			client.writeLine("OK")
-
-		case "EXPIRE":
-			if len(parts) < 3 {
-				client.writeLine("ERR Usage: EXPIRE <key> <ttl-seconds>")
-				continue
-			}
-			seconds, err := strconv.ParseInt(parts[2], 10, 64)
-			if err != nil || seconds <= 0 {
-				client.writeLine("ERR TTL must be a positive integer")
-				continue
-			}
-			if e.Expire(parts[1], time.Duration(seconds)*time.Second) {
-				client.writeLine("1")
-			} else {
-				client.writeLine("0")
-			}
-
-		case "TTL":
-			if len(parts) < 2 {
-				client.writeLine("ERR Usage: TTL <key>")
-				continue
-			}
-			client.writeLine(strconv.FormatInt(e.TTL(parts[1]), 10))
-
-		case "CLEAR":
-			if len(parts) < 2 {
-				client.writeLine("ERR Usage: CLEAR <key-prefix>")
-				continue
-			}
-			client.writeLine("CLEARED " + strconv.Itoa(e.ClearPrefix(parts[1])))
-
-		case "SUBSCRIBE":
-			if len(parts) < 2 {
-				client.writeLine("ERR Usage: SUBSCRIBE <channel>")
-				continue
-			}
-			broker.Subscribe(client, parts[1])
-			client.writeLine("SUBSCRIBED " + parts[1])
-
-		case "UNSUBSCRIBE":
-			if len(parts) < 2 {
-				client.writeLine("ERR Usage: UNSUBSCRIBE <channel>")
-				continue
-			}
-			broker.Unsubscribe(client, parts[1])
-			client.writeLine("UNSUBSCRIBED " + parts[1])
-
-		case "PUBLISH":
-			if len(parts) < 3 {
-				client.writeLine("ERR Usage: PUBLISH <channel> <message>")
-				continue
-			}
-			delivered := broker.Publish(parts[1], parts[2])
-			client.writeLine("PUBLISHED " + strconv.Itoa(delivered))
-
-		case "COMPACT":
-			go Compact(e) // Run in background
-			client.writeLine("OK Compact Started")
-
-		default:
-			client.writeLine("ERR Unknown Command")
+		resp := executeCommand(e, client, line)
+		if resp != "" {
+			client.writeLine(resp)
 		}
 	}
 }
 
-var broker = NewBroker()
+// ==========================================
+// HTTP & WEBSOCKET/SSE TELEMETRY GATEWAY
+// ==========================================
+
+func enableCORS(w http.ResponseWriter) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS, PUT, DELETE")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
+}
+
+func startHTTPGateway(port string, engine *Engine) {
+	mux := http.NewServeMux()
+
+	// Health check
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		enableCORS(w)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "ok",
+			"name":    InstanceName,
+			"version": "2.1.0",
+			"time":    time.Now().Unix(),
+		})
+	})
+
+	// Real-time telemetry stats
+	mux.HandleFunc("/api/stats", func(w http.ResponseWriter, r *http.Request) {
+		enableCORS(w)
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(engine.Stats())
+	})
+
+	// Keys explorer & search
+	mux.HandleFunc("/api/keys", func(w http.ResponseWriter, r *http.Request) {
+		enableCORS(w)
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		pattern := r.URL.Query().Get("q")
+		keys := engine.ListKeys(pattern)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"count": len(keys),
+			"keys":  keys,
+		})
+	})
+
+	// Web terminal command executor
+	mux.HandleFunc("/api/exec", func(w http.ResponseWriter, r *http.Request) {
+		enableCORS(w)
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		var payload struct {
+			Command string `json:"command"`
+			Token   string `json:"token"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			http.Error(w, "Invalid JSON payload", http.StatusBadRequest)
+			return
+		}
+
+		// Virtual HTTP client
+		authenticated := engine.AuthToken == "" || payload.Token == engine.AuthToken
+		virtualClient := &Client{
+			authenticated: authenticated,
+			remoteAddr:    r.RemoteAddr + " (HTTP)",
+		}
+
+		resp := executeCommand(engine, virtualClient, payload.Command)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"command":  payload.Command,
+			"response": resp,
+		})
+	})
+
+	// Server-Sent Events (SSE) Live Operation Stream
+	mux.HandleFunc("/api/events", func(w http.ResponseWriter, r *http.Request) {
+		enableCORS(w)
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Connection", "keep-alive")
+
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
+			return
+		}
+
+		ch := telemetryHub.Subscribe()
+		defer telemetryHub.Unsubscribe(ch)
+
+		// Send initial heartbeat
+		fmt.Fprintf(w, "event: connected\ndata: {\"status\":\"connected\",\"name\":\"%s\"}\n\n", InstanceName)
+		flusher.Flush()
+
+		ctx := r.Context()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case event, ok := <-ch:
+				if !ok {
+					return
+				}
+				data, _ := json.Marshal(event)
+				fmt.Fprintf(w, "data: %s\n\n", string(data))
+				flusher.Flush()
+			}
+		}
+	})
+
+	// Pure Standard Library RFC 6455 WebSocket Monitor
+	mux.HandleFunc("/ws/monitor", func(w http.ResponseWriter, r *http.Request) {
+		enableCORS(w)
+		if !strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
+			http.Error(w, "Expected WebSocket Upgrade", http.StatusBadRequest)
+			return
+		}
+
+		hj, ok := w.(http.Hijacker)
+		if !ok {
+			http.Error(w, "Hijacking unsupported", http.StatusInternalServerError)
+			return
+		}
+
+		conn, bufrw, err := hj.Hijack()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		defer conn.Close()
+
+		// Perform WebSocket handshake
+		key := r.Header.Get("Sec-WebSocket-Key")
+		h := sha1.New()
+		h.Write([]byte(key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"))
+		acceptKey := base64.StdEncoding.EncodeToString(h.Sum(nil))
+
+		bufrw.WriteString("HTTP/1.1 101 Switching Protocols\r\n")
+		bufrw.WriteString("Upgrade: websocket\r\n")
+		bufrw.WriteString("Connection: Upgrade\r\n")
+		bufrw.WriteString("Sec-WebSocket-Accept: " + acceptKey + "\r\n")
+		bufrw.WriteString("Access-Control-Allow-Origin: *\r\n\r\n")
+		bufrw.Flush()
+
+		ch := telemetryHub.Subscribe()
+		defer telemetryHub.Unsubscribe(ch)
+
+		for event := range ch {
+			data, _ := json.Marshal(event)
+			// Frame: 0x81 (text frame) + payload length + payload
+			var frame bytes.Buffer
+			frame.WriteByte(0x81)
+			payloadLen := len(data)
+			if payloadLen < 126 {
+				frame.WriteByte(byte(payloadLen))
+			} else if payloadLen <= 65535 {
+				frame.WriteByte(126)
+				binary.Write(&frame, binary.BigEndian, uint16(payloadLen))
+			} else {
+				frame.WriteByte(127)
+				binary.Write(&frame, binary.BigEndian, uint64(payloadLen))
+			}
+			frame.Write(data)
+
+			if _, err := bufrw.Write(frame.Bytes()); err != nil {
+				break
+			}
+			bufrw.Flush()
+		}
+	})
+
+	server := &http.Server{
+		Addr:    port,
+		Handler: mux,
+	}
+
+	fmt.Printf("   HTTP & TELEMETRY GATEWAY ON %s\n", port)
+	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		log.Printf("HTTP Gateway error: %v", err)
+	}
+}
+
+// ==========================================
+// MAIN ENTRYPOINT & CLI FLAGS
+// ==========================================
 
 func main() {
+	portFlag := flag.String("port", DefaultPort, "TCP port to listen on (e.g. :4000)")
+	httpPortFlag := flag.String("http-port", DefaultHTTPPort, "HTTP/WebSocket telemetry gateway port (e.g. :4001, empty to disable)")
+	dataDirFlag := flag.String("data-dir", DefaultDataDir, "Directory path for SSTable storage")
+	walFileFlag := flag.String("wal-file", DefaultWALFile, "Path to write-ahead log file")
+	authFlag := flag.String("auth-token", "", "Optional password/token for client authentication")
+	nameFlag := flag.String("name", "sider-primary", "Database instance identifier name")
+	limitFlag := flag.Int("memtable-limit", 100, "Number of keys before flushing MemTable to SSTable")
+	flag.Parse()
+
+	Port = *portFlag
+	if !strings.HasPrefix(Port, ":") && !strings.Contains(Port, ":") {
+		Port = ":" + Port
+	}
+
+	HTTPPort = *httpPortFlag
+	if HTTPPort != "" && !strings.HasPrefix(HTTPPort, ":") && !strings.Contains(HTTPPort, ":") {
+		HTTPPort = ":" + HTTPPort
+	}
+
+	DataDir = *dataDirFlag
+	WALFile = *walFileFlag
+	AuthToken = *authFlag
+	InstanceName = *nameFlag
+	MemtableLimit = *limitFlag
+
 	rand.Seed(time.Now().UnixNano())
-	engine := NewEngine()
+	engine := NewEngineWithConfig(DataDir, WALFile, AuthToken)
 
 	listener, err := net.Listen("tcp", Port)
 	if err != nil {
-		log.Fatal("Error starting server:", err)
+		log.Fatal("Error starting TCP server:", err)
 	}
 	defer listener.Close()
 
-	fmt.Println("========================================")
-	fmt.Printf("   SIDER SERVER LISTENING ON %s   \n", Port)
-	fmt.Println("   Version: 2.0.0                      ")
-	fmt.Println("   Author:  AgnibhaRay                 ")
-	fmt.Println("========================================")
+	fmt.Println("==================================================")
+	fmt.Printf("   ⚡ SIDER DB ENGINE LISTENING ON %s\n", Port)
+	fmt.Printf("   Instance Name: %s\n", InstanceName)
+	fmt.Printf("   Data Storage:  %s | WAL: %s\n", DataDir, WALFile)
+	if AuthToken != "" {
+		fmt.Println("   Security:      AUTH REQUIRED (Token Enabled)")
+	} else {
+		fmt.Println("   Security:      OPEN ACCESS (No Auth)")
+	}
+	fmt.Println("   Version:       2.1.0 Enterprise Ready")
+	fmt.Println("==================================================")
+
+	// Start HTTP / SSE / WebSocket Gateway in background
+	if HTTPPort != "" {
+		go startHTTPGateway(HTTPPort, engine)
+	}
 
 	for {
 		conn, err := listener.Accept()

@@ -7,6 +7,8 @@
 *.dll
 *.so
 *.dylib
+/sider
+/sider-cloud
 
 # Test binary, built with `go test -c`
 *.test
@@ -24,12 +26,15 @@ profile.cov
 go.work
 go.work.sum
 
-# env file
+# env files
 .env
+.env.*
+.env.local
 
 # Editor/IDE
 # .idea/
 # .vscode/
 
 .DS_Store
-
+__pycache__/
+/sider-bench

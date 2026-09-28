@@ -90,18 +90,58 @@
 
 html {
   scroll-behavior: smooth;
-  background-color: var(--color-putty);
-  color: var(--color-ink);
+  background-color: #0e0e0e;
+  color: #ffffff;
+  overflow-x: hidden;
+  max-width: 100vw;
 }
 
 body {
   margin: 0;
   padding: 0;
-  background-color: var(--color-putty);
-  color: var(--color-ink);
+  background-color: #0e0e0e;
+  color: #ffffff;
   font-family: var(--font-helvetica-now);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+  max-width: 100vw;
+  position: relative;
+}
+
+/* Hide scrollbar for clean mobile tabs */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Custom Sleek Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #0e0e0e;
+}
+::-webkit-scrollbar-thumb {
+  background: #2c2c2c;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #405bff;
+}
+
+/* Sleek Horizon Tilt Transition */
+.horizon-card {
+  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.3s ease, box-shadow 0.3s ease;
+}
+.horizon-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(64, 91, 255, 0.6);
+  box-shadow: 0 12px 30px -10px rgba(64, 91, 255, 0.25);
 }
 
 /* Typography Utility Classes */
@@ -327,4 +367,33 @@ body {
   html.custom-cursor-active * {
     cursor: none !important;
   }
+}
+
+/* Kinetic Whoop, Swoop, and Drop Keyframes */
+@keyframes tabSlideIn {
+  0% { transform: translateX(24px) scale(0.98); opacity: 0; filter: blur(6px); }
+  100% { transform: translateX(0) scale(1); opacity: 1; filter: blur(0); }
+}
+
+@keyframes marquee {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+@keyframes buttonPop {
+  0% { transform: scale(1); }
+  40% { transform: scale(0.92); }
+  75% { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+
+.kinetic-button {
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.kinetic-button:active {
+  transform: scale(0.94);
+}
+.kinetic-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 25px -5px rgba(64, 91, 255, 0.45);
 }

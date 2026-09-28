@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { ThreeArchitectureVisualizer } from "./ThreeArchitectureVisualizer";
 
 export function ArchitectureSection() {
   const [activeDriver, setActiveDriver] = useState<"cli" | "java" | "python" | "docker">("cli");
@@ -10,17 +11,28 @@ export function ArchitectureSection() {
       {/* Corner Labels: Opposite corners at 12px uppercase in Helvetica Now */}
       <div className="w-full max-w-7xl mx-auto flex items-center justify-between text-[#595855] text-[12px] uppercase tracking-[0.1em] mb-12 sm:mb-16">
         <span style={{ fontFamily: "var(--font-helvetica-now)" }}>FOLIO NO. 05</span>
-        <span style={{ fontFamily: "var(--font-helvetica-now)" }}>SYSTEM INTERFACES & DRIVERS</span>
+        <span style={{ fontFamily: "var(--font-helvetica-now)" }}>SYSTEM ARCHITECTURE & 3D VISUALIZER</span>
       </div>
 
       {/* Centered Section Header: Davinci 94px weight 500, #000000, letter-spacing -0.85px, line-height 0.84 */}
-      <div className="w-full max-w-5xl mx-auto text-center mb-16 sm:mb-20">
+      <div className="w-full max-w-5xl mx-auto text-center mb-8 sm:mb-10">
         <h2
           className="text-[#000000] text-[48px] sm:text-[72px] md:text-[94px] font-medium leading-[0.84] tracking-[-0.85px]"
           style={{ fontFamily: "var(--font-davinci)" }}
         >
           ANATOMY OF SIDER
         </h2>
+        <p
+          className="mt-6 text-[15px] sm:text-[17px] text-[#595855] max-w-2xl mx-auto leading-relaxed"
+          style={{ fontFamily: "var(--font-helvetica-now)" }}
+        >
+          Interactive 3D exploration of the Log-Structured Merge pipeline. Inspect live write, read, compaction, and pub/sub flows across memory and persistent disk tiers.
+        </p>
+      </div>
+
+      {/* 3D Interactive Three.js Architecture Visualizer */}
+      <div className="w-full max-w-6xl mx-auto mb-20">
+        <ThreeArchitectureVisualizer />
       </div>
 
       {/* Grid of 3 Architectural Folio Cards in Bone (#e7e5e4, 9px radius, hairline #dfdcd5 border, 24px padding) */}
@@ -179,17 +191,20 @@ export function ArchitectureSection() {
               <br />
               val = client.get(&quot;price:btc&quot;)
               <br />
-              client.clear(&quot;temp:cache:&quot;)
+              print(f&quot;BTC Price: &#123;val&#125;&quot;)
             </div>
           )}
 
           {activeDriver === "docker" && (
             <div>
-              <span className="text-[#808080]"># Run official Sider Docker container</span>
+              <span className="text-[#808080]"># Pull and run Sider v2 with persistent data mount</span>
               <br />
-              <span className="text-[#c4c3b6]">$</span> docker pull agnibharay/sider:v2.0.0
+              <span className="text-[#c4c3b6]">$</span> docker run -d -p 4000:4000 -v $(pwd)/data:/root/data --name sider-db sider:latest
               <br />
-              <span className="text-[#c4c3b6]">$</span> docker run -d -p 4000:4000 -v ./data:/data agnibharay/sider:v2.0.0
+              <br />
+              <span className="text-[#808080]"># Verify health &amp; interactive netcat connection</span>
+              <br />
+              <span className="text-[#c4c3b6]">$</span> nc localhost 4000
             </div>
           )}
         </div>

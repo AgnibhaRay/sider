@@ -457,6 +457,22 @@ export function TerminalSection() {
           </form>
         </div>
       </div>
+
+      {/* Cloud Alpha Promotion Banner */}
+      <div className="mt-8 p-4 sm:p-5 rounded-[16px] bg-[#000000] text-[#ffffff] border border-[#405bff]/40 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-[0_4px_25px_rgba(0,0,0,0.3)]">
+        <div className="flex items-center gap-3 text-center sm:text-left">
+          <span className="w-2.5 h-2.5 rounded-full bg-[#00f0ff] animate-ping shrink-0 hidden sm:inline-block" />
+          <span className="text-[13px] text-[#dfdcd5]">
+            Looking for managed cloud instances? <strong className="text-white">Sider Cloud Public Alpha</strong> is live on bare-metal region <code className="text-[#00f0ff] font-mono bg-white/10 px-1.5 py-0.5 rounded">ind-tbn-1</code> with sub-millisecond SkipList latency.
+          </span>
+        </div>
+        <a
+          href="https://sider-cloud.vercel.app"
+          className="w-full sm:w-auto px-5 py-2.5 rounded-[30px] bg-[#405bff] hover:bg-[#344bd6] text-white text-[12px] font-medium transition-all shadow-[0_0_15px_rgba(64,91,255,0.4)] text-center whitespace-nowrap"
+        >
+          Test Cloud Alpha &rarr;
+        </a>
+      </div>
     </section>
   );
 }

@@ -3,45 +3,6 @@
 import React, { useEffect, useRef } from "react";
 import * as THREE from "three";
 
-function createCircleNodeTexture(): THREE.CanvasTexture {
-  const canvas = document.createElement("canvas");
-  canvas.width = 128;
-  canvas.height = 128;
-  const ctx = canvas.getContext("2d");
-
-  if (ctx) {
-    const centerX = 64;
-    const centerY = 64;
-    const radius = 58;
-
-    // Outer soft glow
-    const grad = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, radius);
-    grad.addColorStop(0, "rgba(255, 255, 255, 1.0)");
-    grad.addColorStop(0.25, "rgba(235, 235, 235, 0.95)");
-    grad.addColorStop(0.55, "rgba(200, 195, 185, 0.45)");
-    grad.addColorStop(0.85, "rgba(150, 145, 135, 0.15)");
-    grad.addColorStop(1, "rgba(0, 0, 0, 0)");
-
-    ctx.fillStyle = grad;
-    ctx.beginPath();
-    ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Solid inner core for crisp high-density center
-    ctx.beginPath();
-    ctx.arc(centerX, centerY, 14, 0, Math.PI * 2);
-    ctx.fillStyle = "rgba(255, 255, 255, 1.0)";
-    ctx.fill();
-  }
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.generateMipmaps = true;
-  texture.minFilter = THREE.LinearMipmapLinearFilter;
-  texture.magFilter = THREE.LinearFilter;
-  texture.needsUpdate = true;
-  return texture;
-}
-
 export function ThreeDarkCanvas() {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -61,33 +22,42 @@ export function ThreeDarkCanvas() {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     container.appendChild(renderer.domElement);
 
-    // Constellation of Nodes (LSM SkipList representation)
-    const nodeCount = 70;
+    // Constellation of Nodes (LSM SkipList representation in Voltage Blue & Signal Violet)
+    const nodeCount = 85;
     const positions = new Float32Array(nodeCount * 3);
+    const colors = new Float32Array(nodeCount * 3);
     const velocities: { x: number; y: number; z: number }[] = [];
+
+    const cVoltage = new THREE.Color(0x405bff);
+    const cViolet = new THREE.Color(0x7084ff);
+    const cCyan = new THREE.Color(0x00f0ff);
 
     for (let i = 0; i < nodeCount; i++) {
       const idx = i * 3;
-      positions[idx] = (Math.random() - 0.5) * 14;
-      positions[idx + 1] = (Math.random() - 0.5) * 8;
+      positions[idx] = (Math.random() - 0.5) * 16;
+      positions[idx + 1] = (Math.random() - 0.5) * 10;
       positions[idx + 2] = (Math.random() - 0.5) * 6;
 
+      const r = Math.random();
+      const chosen = r < 0.5 ? cVoltage : r < 0.85 ? cViolet : cCyan;
+      colors[idx] = chosen.r;
+      colors[idx + 1] = chosen.g;
+      colors[idx + 2] = chosen.b;
+
       velocities.push({
-        x: (Math.random() - 0.5) * 0.005,
-        y: (Math.random() - 0.5) * 0.005,
-        z: (Math.random() - 0.5) * 0.003,
+        x: (Math.random() - 0.5) * 0.006,
+        y: (Math.random() - 0.5) * 0.006,
+        z: (Math.random() - 0.5) * 0.004,
       });
     }
 
     const nodeGeo = new THREE.BufferGeometry();
     nodeGeo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-
-    const circleMap = createCircleNodeTexture();
+    nodeGeo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
 
     const nodeMat = new THREE.PointsMaterial({
-      color: 0xffffff,
-      size: 0.18,
-      map: circleMap,
+      size: 0.12,
+      vertexColors: true,
       transparent: true,
       opacity: 0.85,
       blending: THREE.AdditiveBlending,
@@ -104,9 +74,9 @@ export function ThreeDarkCanvas() {
     lineGeo.setAttribute("position", new THREE.BufferAttribute(linePositions, 3));
 
     const lineMat = new THREE.LineBasicMaterial({
-      color: 0xdfdcd5,
+      color: 0x405bff,
       transparent: true,
-      opacity: 0.14,
+      opacity: 0.22,
       blending: THREE.AdditiveBlending,
     });
 
@@ -123,15 +93,65 @@ export function ThreeDarkCanvas() {
 
     window.addEventListener("mousemove", handleMouseMove, { passive: true });
 
-    // Scroll Tracking for Tier Separation
-    let scrollOffset = 0;
-    const handleScroll = () => {
-      const rect = container.getBoundingClientRect();
-      const visibleRatio = 1 - Math.max(0, Math.min(1, rect.top / window.innerHeight));
-      scrollOffset = visibleRatio;
+    let animId: number;
+    const clock = new THREE.Clock();
+
+    const animate = () => {
+      animId = requestAnimationFrame(animate);
+      const elapsed = clock.getElapsedTime();
+
+      const posAttr = nodeGeo.attributes.position as THREE.BufferAttribute;
+      const posArray = posAttr.array as Float32Array;
+
+      // Update node positions
+      for (let i = 0; i < nodeCount; i++) {
+        const idx = i * 3;
+        posArray[idx] += velocities[i].x;
+        posArray[idx + 1] += velocities[i].y;
+        posArray[idx + 2] += velocities[i].z;
+
+        // Bounce bounds
+        if (Math.abs(posArray[idx]) > 8) velocities[i].x *= -1;
+        if (Math.abs(posArray[idx + 1]) > 5) velocities[i].y *= -1;
+        if (Math.abs(posArray[idx + 2]) > 3) velocities[i].z *= -1;
+      }
+      posAttr.needsUpdate = true;
+
+      // Update lines between nearby nodes
+      let lineIndex = 0;
+      const lineArray = lineGeo.attributes.position.array as Float32Array;
+      const maxDist = 2.2;
+
+      for (let i = 0; i < nodeCount; i++) {
+        for (let j = i + 1; j < nodeCount; j++) {
+          const dx = posArray[i * 3] - posArray[j * 3];
+          const dy = posArray[i * 3 + 1] - posArray[j * 3 + 1];
+          const dz = posArray[i * 3 + 2] - posArray[j * 3 + 2];
+          const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+          if (dist < maxDist) {
+            lineArray[lineIndex++] = posArray[i * 3];
+            lineArray[lineIndex++] = posArray[i * 3 + 1];
+            lineArray[lineIndex++] = posArray[i * 3 + 2];
+
+            lineArray[lineIndex++] = posArray[j * 3];
+            lineArray[lineIndex++] = posArray[j * 3 + 1];
+            lineArray[lineIndex++] = posArray[j * 3 + 2];
+          }
+        }
+      }
+
+      lineGeo.setDrawRange(0, lineIndex / 3);
+      lineGeo.attributes.position.needsUpdate = true;
+
+      // Subtle scene parallax based on mouse
+      scene.rotation.y = mouse.x * 0.15 + elapsed * 0.02;
+      scene.rotation.x = -mouse.y * 0.15;
+
+      renderer.render(scene, camera);
     };
 
-    window.addEventListener("scroll", handleScroll, { passive: true });
+    animate();
 
     const handleResize = () => {
       if (!container) return;
@@ -144,85 +164,10 @@ export function ThreeDarkCanvas() {
 
     window.addEventListener("resize", handleResize);
 
-    let animId: number;
-    let clock = 0;
-    const animate = () => {
-      animId = requestAnimationFrame(animate);
-      clock += 0.015;
-
-      const pos = nodeGeo.attributes.position.array as Float32Array;
-      let lineIndex = 0;
-      const linePos = lineGeo.attributes.position.array as Float32Array;
-
-      // Update positions
-      for (let i = 0; i < nodeCount; i++) {
-        const idx = i * 3;
-
-        pos[idx] += velocities[i].x;
-        pos[idx + 1] += velocities[i].y;
-        pos[idx + 2] += velocities[i].z;
-
-        // Subtle harmonic floating
-        pos[idx + 1] += Math.sin(clock + i) * 0.0008;
-
-        // Bounce at boundaries
-        if (Math.abs(pos[idx]) > 7.2) velocities[i].x *= -1;
-        if (Math.abs(pos[idx + 1]) > 4.2) velocities[i].y *= -1;
-        if (Math.abs(pos[idx + 2]) > 3.2) velocities[i].z *= -1;
-
-        // Subtle mouse influence
-        const dx = pos[idx] - mouse.x * 4;
-        const dy = pos[idx + 1] - mouse.y * 3;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist < 2.5) {
-          pos[idx] += (dx / dist) * 0.015;
-          pos[idx + 1] += (dy / dist) * 0.015;
-        }
-
-        // Connect nearby nodes
-        for (let j = i + 1; j < nodeCount; j++) {
-          const jdx = j * 3;
-          const distNodes = Math.hypot(
-            pos[idx] - pos[jdx],
-            pos[idx + 1] - pos[jdx + 1],
-            pos[idx + 2] - pos[jdx + 2]
-          );
-
-          if (distNodes < 2.4 && lineIndex < linePositions.length - 6) {
-            linePos[lineIndex++] = pos[idx];
-            linePos[lineIndex++] = pos[idx + 1];
-            linePos[lineIndex++] = pos[idx + 2];
-
-            linePos[lineIndex++] = pos[jdx];
-            linePos[lineIndex++] = pos[jdx + 1];
-            linePos[lineIndex++] = pos[jdx + 2];
-          }
-        }
-      }
-
-      nodeGeo.attributes.position.needsUpdate = true;
-      lineGeo.attributes.position.needsUpdate = true;
-      lineGeo.setDrawRange(0, lineIndex / 3);
-
-      // Rotate slightly with scroll
-      scene.rotation.y = scrollOffset * 0.5;
-      scene.rotation.x = scrollOffset * 0.15;
-
-      renderer.render(scene, camera);
-    };
-
-    animate();
-
     return () => {
-      cancelAnimationFrame(animId);
       window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("scroll", handleScroll);
       window.removeEventListener("resize", handleResize);
-      circleMap.dispose();
-      nodeGeo.dispose();
-      nodeMat.dispose();
-      lineGeo.dispose();
-      lineMat.dispose();
+      cancelAnimationFrame(animId);
       renderer.dispose();
       if (container.contains(renderer.domElement)) {
         container.removeChild(renderer.domElement);
@@ -230,11 +175,5 @@ export function ThreeDarkCanvas() {
     };
   }, []);
 
-  return (
-    <div
-      ref={containerRef}
-      className="absolute inset-0 w-full h-full pointer-events-none z-0 opacity-80"
-      aria-hidden="true"
-    />
-  );
+  return <div ref={containerRef} className="absolute inset-0 w-full h-full pointer-events-none" />;
 }

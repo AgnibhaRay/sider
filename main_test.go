@@ -1,7 +1,11 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"testing"
 	"time"
@@ -168,5 +172,134 @@ func TestBrokerPubSub(t *testing.T) {
 	delivered := broker.Publish("test-channel", "dropped")
 	if delivered != 0 {
 		t.Fatalf("expected 0 delivered after unsubscribe, got %d", delivered)
+	}
+}
+
+func TestEngineAuth(t *testing.T) {
+	testDir := "data_test_auth"
+	testWal := "wal_test_auth.wal"
+	defer os.RemoveAll(testDir)
+	defer os.Remove(testWal)
+
+	engine := NewEngineWithConfig(testDir, testWal, "secret-pass-123")
+	clientConn, serverConn := net.Pipe()
+	defer clientConn.Close()
+	defer serverConn.Close()
+
+	client := &Client{
+		conn:          serverConn,
+		authenticated: false,
+		remoteAddr:    "127.0.0.1:9999",
+	}
+
+	// 1. Without auth, PUT should be rejected
+	resp := executeCommand(engine, client, "PUT secret-key value")
+	if resp != "ERR NOAUTH Authentication required" {
+		t.Fatalf("expected NOAUTH error, got %s", resp)
+	}
+
+	// 2. PING should be allowed
+	resp = executeCommand(engine, client, "PING")
+	if resp != "PONG" {
+		t.Fatalf("expected PONG, got %s", resp)
+	}
+
+	// 3. Wrong password should fail
+	resp = executeCommand(engine, client, "AUTH wrong-password")
+	if resp != "ERR invalid password" {
+		t.Fatalf("expected invalid password error, got %s", resp)
+	}
+	if client.authenticated {
+		t.Fatalf("client should not be authenticated")
+	}
+
+	// 4. Correct password should succeed
+	resp = executeCommand(engine, client, "AUTH secret-pass-123")
+	if resp != "OK" {
+		t.Fatalf("expected OK, got %s", resp)
+	}
+	if !client.authenticated {
+		t.Fatalf("client should now be authenticated")
+	}
+
+	// 5. Subsequent commands should succeed
+	resp = executeCommand(engine, client, "PUT auth-k1 auth-v1")
+	if resp != "OK" {
+		t.Fatalf("expected OK after auth, got %s", resp)
+	}
+	resp = executeCommand(engine, client, "GET auth-k1")
+	if resp != "auth-v1" {
+		t.Fatalf("expected auth-v1, got %s", resp)
+	}
+}
+
+func TestEngineStatsAndKeyListing(t *testing.T) {
+	testDir := "data_test_stats"
+	testWal := "wal_test_stats.wal"
+	defer os.RemoveAll(testDir)
+	defer os.Remove(testWal)
+
+	engine := NewEngineWithConfig(testDir, testWal, "")
+	engine.Put("users:1", "Alice")
+	engine.Put("users:2", "Bob")
+	engine.PutWithTTL("session:xyz", "active", 60*time.Second)
+
+	keys := engine.ListKeys("")
+	if len(keys) != 3 {
+		t.Fatalf("expected 3 keys, got %d", len(keys))
+	}
+
+	stats := engine.Stats()
+	if stats["status"] != "online" {
+		t.Fatalf("expected status online, got %v", stats["status"])
+	}
+	if stats["memtable_entries"].(int) != 3 {
+		t.Fatalf("expected 3 memtable entries, got %v", stats["memtable_entries"])
+	}
+}
+
+func TestHTTPExecAPI(t *testing.T) {
+	testDir := "data_test_http"
+	testWal := "wal_test_http.wal"
+	defer os.RemoveAll(testDir)
+	defer os.Remove(testWal)
+
+	engine := NewEngineWithConfig(testDir, testWal, "http-token")
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload struct {
+			Command string `json:"command"`
+			Token   string `json:"token"`
+		}
+		json.NewDecoder(r.Body).Decode(&payload)
+
+		authenticated := engine.AuthToken == "" || payload.Token == engine.AuthToken
+		virtualClient := &Client{
+			authenticated: authenticated,
+			remoteAddr:    "127.0.0.1:8888",
+		}
+
+		resp := executeCommand(engine, virtualClient, payload.Command)
+		json.NewEncoder(w).Encode(map[string]interface{}{"response": resp})
+	})
+
+	// Test with valid token
+	body, _ := json.Marshal(map[string]string{
+		"command": "PUT cloud:key cloud:val",
+		"token":   "http-token",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/exec", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	var res map[string]interface{}
+	json.NewDecoder(rec.Body).Decode(&res)
+	if res["response"] != "OK" {
+		t.Fatalf("expected OK from HTTP exec, got %v", res["response"])
+	}
+
+	// Verify key was set in engine
+	if val := engine.Get("cloud:key"); val != "cloud:val" {
+		t.Fatalf("expected cloud:val, got %s", val)
 	}
 }
