@@ -19,9 +19,40 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Sider — LSM-Tree Persistent Key-Value Store & Real-Time Engine",
+  metadataBase: new URL("https://sider-cloud.vercel.app"),
+  title: "Sider Cloud — Managed Bare-Metal LSM Storage Engine",
   description:
-    "An ultra-fast, LSM-tree persistent key-value store and real-time streaming engine built from scratch in Go.",
+    "Zero-dependency LSM-Tree persistent storage engine on dedicated bare-metal hardware. Sub-millisecond latency, instant WAL crash recovery, and real-time interactive cockpit.",
+  keywords: [
+    "Sider",
+    "SiderDB",
+    "Sider Cloud",
+    "LSM-Tree",
+    "Key-Value Store",
+    "Database",
+    "Go",
+    "SkipList",
+    "Distributed Systems",
+    "Agnibha Ray",
+  ],
+  authors: [{ name: "Agnibha Ray", url: "https://github.com/AgnibhaRay" }],
+  creator: "Agnibha Ray",
+  openGraph: {
+    type: "website",
+    locale: "en_US",
+    url: "https://sider-cloud.vercel.app",
+    siteName: "Sider Cloud",
+    title: "Sider Cloud — Managed Bare-Metal LSM Storage Engine",
+    description:
+      "Zero-dependency LSM-Tree persistent storage engine on dedicated bare-metal hardware. Sub-millisecond latency, instant WAL crash recovery, and real-time interactive cockpit.",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Sider Cloud — Managed Bare-Metal LSM Storage Engine",
+    description:
+      "Zero-dependency LSM-Tree persistent storage engine on dedicated bare-metal hardware. Sub-millisecond latency, instant WAL crash recovery, and real-time interactive cockpit.",
+    creator: "@AgnibhaRay",
+  },
   icons: {
     icon: "/favicon.ico",
   },

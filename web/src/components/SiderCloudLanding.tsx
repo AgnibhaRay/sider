@@ -94,7 +94,7 @@ export function SiderCloudLanding() {
       <div className="w-full max-w-[1240px] mx-auto pt-3 sm:pt-6 px-3 sm:px-4 sticky top-12 z-40">
         <header className="w-full bg-[#191919] border border-white/10 rounded-[60px] px-3.5 sm:px-6 h-13 sm:h-14 flex items-center justify-between gap-2 sm:gap-3 shadow-[0_4px_20px_rgba(0,0,0,0.45)] backdrop-blur-md">
           {/* Brand Left */}
-          <Link href="/" className="flex items-center gap-2 sm:gap-2.5 shrink-0 whitespace-nowrap">
+          <Link href="/cloud" className="flex items-center gap-2 sm:gap-2.5 shrink-0 whitespace-nowrap">
             <SiderLogo size={22} />
             <div className="flex items-center gap-1.5 sm:gap-2 whitespace-nowrap">
               <span className="text-[14px] sm:text-[15px] font-medium text-white tracking-[-0.02em] whitespace-nowrap">
@@ -125,6 +125,15 @@ export function SiderCloudLanding() {
             </a>
             <a href="#quickstart" className="hover:text-white transition-colors whitespace-nowrap">
               SDKs
+            </a>
+            <a
+              href="https://siderdb.vercel.app"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[#a7a9ac] hover:text-white transition-colors whitespace-nowrap flex items-center gap-1 text-[12px] px-2 py-1 rounded-[20px] bg-white/5 border border-white/10"
+            >
+              <span>SiderDB Folio</span>
+              <span className="text-[10px]">↗</span>
             </a>
           </nav>
 
@@ -218,6 +227,16 @@ export function SiderCloudLanding() {
                 className="p-3 rounded-[16px] hover:bg-[#252525] text-white flex items-center gap-2"
               >
                 <span>📦 SDK Quickstart</span>
+              </a>
+              <a
+                href="https://siderdb.vercel.app"
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => setMobileMenuOpen(false)}
+                className="p-3 rounded-[16px] bg-[#0e0e0e] border border-white/10 text-[#d1d3d4] hover:text-white flex items-center justify-between"
+              >
+                <span>🏛️ SiderDB Engine Folio</span>
+                <span className="text-[10px] text-[#6d6e71]">↗</span>
               </a>
             </div>
           </div>
