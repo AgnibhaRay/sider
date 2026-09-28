@@ -10,7 +10,7 @@ import { FeatureSection } from "./FeatureSection";
 import { TerminalSection } from "./TerminalSection";
 import { BenchmarkSection } from "./BenchmarkSection";
 import { ArchitectureSection } from "./ArchitectureSection";
-import { CloudFooter } from "./CloudFooter";
+import { SiderDbFooter } from "./SiderDbFooter";
 
 export function SiderDbLanding() {
   const terminalRef = useRef<HTMLDivElement>(null);
@@ -72,7 +72,7 @@ export function SiderDbLanding() {
 
       {/* High-Tech Cloud Footer (same as sider-cloud with Agnibha Ray socials and cluster telemetry) */}
       <div className="relative z-20 w-full bg-[#141414]">
-        <CloudFooter />
+        <SiderDbFooter />
       </div>
     </main>
   );

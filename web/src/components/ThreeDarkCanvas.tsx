@@ -12,18 +12,24 @@ export function ThreeDarkCanvas() {
 
     let width = container.clientWidth;
     let height = container.clientHeight;
+    let isVisible = true;
+    let animId: number | null = null;
 
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(50, width / height, 0.1, 100);
     camera.position.z = 8;
 
-    const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, powerPreference: "high-performance" });
+    const renderer = new THREE.WebGLRenderer({
+      alpha: true,
+      antialias: false,
+      powerPreference: "low-power",
+    });
     renderer.setSize(width, height);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.25));
     container.appendChild(renderer.domElement);
 
-    // Constellation of Nodes (LSM SkipList representation in Voltage Blue & Signal Violet)
-    const nodeCount = 85;
+    // Optimized constellation (40 nodes for high performance & minimal RAM)
+    const nodeCount = 40;
     const positions = new Float32Array(nodeCount * 3);
     const colors = new Float32Array(nodeCount * 3);
     const velocities: { x: number; y: number; z: number }[] = [];
@@ -45,9 +51,9 @@ export function ThreeDarkCanvas() {
       colors[idx + 2] = chosen.b;
 
       velocities.push({
-        x: (Math.random() - 0.5) * 0.006,
-        y: (Math.random() - 0.5) * 0.006,
-        z: (Math.random() - 0.5) * 0.004,
+        x: (Math.random() - 0.5) * 0.005,
+        y: (Math.random() - 0.5) * 0.005,
+        z: (Math.random() - 0.5) * 0.003,
       });
     }
 
@@ -60,43 +66,42 @@ export function ThreeDarkCanvas() {
       vertexColors: true,
       transparent: true,
       opacity: 0.85,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
     });
 
     const nodePoints = new THREE.Points(nodeGeo, nodeMat);
     scene.add(nodePoints);
 
-    // Connecting Lines between adjacent nodes
-    const maxConnections = (nodeCount * (nodeCount - 1)) / 2;
-    const linePositions = new Float32Array(maxConnections * 6);
+    // Dynamic Connections
+    const maxLines = (nodeCount * (nodeCount - 1)) / 2;
+    const linePositions = new Float32Array(maxLines * 6);
     const lineGeo = new THREE.BufferGeometry();
     lineGeo.setAttribute("position", new THREE.BufferAttribute(linePositions, 3));
 
     const lineMat = new THREE.LineBasicMaterial({
       color: 0x405bff,
       transparent: true,
-      opacity: 0.22,
+      opacity: 0.25,
       blending: THREE.AdditiveBlending,
     });
 
     const lines = new THREE.LineSegments(lineGeo, lineMat);
     scene.add(lines);
 
-    // Mouse Tracking
-    let mouse = { x: 0, y: 0 };
+    const mouse = { x: 0, y: 0 };
     const handleMouseMove = (e: MouseEvent) => {
-      const rect = container.getBoundingClientRect();
-      mouse.x = ((e.clientX - rect.left) / width) * 2 - 1;
-      mouse.y = -(((e.clientY - rect.top) / height) * 2 - 1);
+      mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+      mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
     };
-
     window.addEventListener("mousemove", handleMouseMove, { passive: true });
 
-    let animId: number;
     const clock = new THREE.Clock();
 
     const animate = () => {
+      if (!isVisible) {
+        animId = null;
+        return;
+      }
+
       animId = requestAnimationFrame(animate);
       const elapsed = clock.getElapsedTime();
 
@@ -110,7 +115,6 @@ export function ThreeDarkCanvas() {
         posArray[idx + 1] += velocities[i].y;
         posArray[idx + 2] += velocities[i].z;
 
-        // Bounce bounds
         if (Math.abs(posArray[idx]) > 8) velocities[i].x *= -1;
         if (Math.abs(posArray[idx + 1]) > 5) velocities[i].y *= -1;
         if (Math.abs(posArray[idx + 2]) > 3) velocities[i].z *= -1;
@@ -120,7 +124,7 @@ export function ThreeDarkCanvas() {
       // Update lines between nearby nodes
       let lineIndex = 0;
       const lineArray = lineGeo.attributes.position.array as Float32Array;
-      const maxDist = 2.2;
+      const maxDist = 2.4;
 
       for (let i = 0; i < nodeCount; i++) {
         for (let j = i + 1; j < nodeCount; j++) {
@@ -144,14 +148,25 @@ export function ThreeDarkCanvas() {
       lineGeo.setDrawRange(0, lineIndex / 3);
       lineGeo.attributes.position.needsUpdate = true;
 
-      // Subtle scene parallax based on mouse
-      scene.rotation.y = mouse.x * 0.15 + elapsed * 0.02;
-      scene.rotation.x = -mouse.y * 0.15;
+      scene.rotation.y = mouse.x * 0.12 + elapsed * 0.015;
+      scene.rotation.x = -mouse.y * 0.12;
 
       renderer.render(scene, camera);
     };
 
-    animate();
+    // Pause rendering when scrolled out of view to save RAM & CPU
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          isVisible = entry.isIntersecting;
+          if (isVisible && !animId) {
+            animate();
+          }
+        });
+      },
+      { threshold: 0.05 }
+    );
+    observer.observe(container);
 
     const handleResize = () => {
       if (!container) return;
@@ -161,13 +176,17 @@ export function ThreeDarkCanvas() {
       camera.updateProjectionMatrix();
       renderer.setSize(width, height);
     };
-
-    window.addEventListener("resize", handleResize);
+    window.addEventListener("resize", handleResize, { passive: true });
 
     return () => {
+      observer.disconnect();
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("resize", handleResize);
-      cancelAnimationFrame(animId);
+      if (animId) cancelAnimationFrame(animId);
+      nodeGeo.dispose();
+      nodeMat.dispose();
+      lineGeo.dispose();
+      lineMat.dispose();
       renderer.dispose();
       if (container.contains(renderer.domElement)) {
         container.removeChild(renderer.domElement);

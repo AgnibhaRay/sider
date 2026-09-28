@@ -1,25 +1,41 @@
-import { clerkMiddleware } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 
-export default clerkMiddleware((auth, req) => {
+export function middleware(req: NextRequest) {
   const host = req.headers.get("host") || "";
-  const { pathname } = req.nextUrl;
+  const url = req.nextUrl.clone();
 
-  // Seamless domain routing:
-  // sider-cloud.vercel.app -> serves /cloud (Sider Cloud Cockpit & Quests)
-  // siderdb.vercel.app -> serves / (Sider Database Engine Folio & Info)
-  if (host.includes("sider-cloud") && pathname === "/") {
-    return NextResponse.rewrite(new URL("/cloud", req.url));
+  const isSiderCloudHost = host.includes("sider-cloud");
+  const isSiderDbHost = host.includes("siderdb");
+
+  // 1. If visiting sider-cloud.vercel.app directly on root, rewrite to /cloud
+  if (isSiderCloudHost && url.pathname === "/") {
+    url.pathname = "/cloud";
+    return NextResponse.rewrite(url);
+  }
+
+  // 2. Remove /console and all Sider Cloud pages from the siderdb domain:
+  // Redirect any cloud pages directly to the dedicated sider-cloud domain
+  if (isSiderDbHost) {
+    const cloudPaths = ["/console", "/cloud", "/sign-in", "/sign-up"];
+    const matchesCloudPath = cloudPaths.some(
+      (p) => url.pathname === p || url.pathname.startsWith(`${p}/`)
+    );
+
+    if (matchesCloudPath) {
+      const redirectUrl = new URL(
+        url.pathname + url.search,
+        "https://sider-cloud.vercel.app"
+      );
+      return NextResponse.redirect(redirectUrl, 307);
+    }
   }
 
   return NextResponse.next();
-});
+}
 
 export const config = {
   matcher: [
-    // Skip Next.js internals and all static files, unless found in search params
-    "/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)",
-    // Always run for API routes
-    "/(api|trpc)(.*)",
+    "/((?!api|_next/static|_next/image|favicon.ico|paintings|benchmarks).*)",
   ],
 };

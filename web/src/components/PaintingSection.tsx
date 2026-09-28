@@ -58,7 +58,7 @@ export function PaintingSection() {
       <div
         className="absolute inset-0 w-full h-full bg-cover bg-center"
         style={{
-          backgroundImage: "url('/paintings/landscape_hd.jpg')",
+          backgroundImage: "url('/paintings/landscape.jpg')",
           backgroundRepeat: "no-repeat",
           backgroundSize: "cover",
           backgroundPosition: "center 42%",

@@ -239,6 +239,12 @@ export function ThreeArchitectureVisualizer() {
   const [screenCoords, setScreenCoords] = useState<Record<string, { x: number; y: number; visible: boolean }>>({});
   const [pulseTrigger, setPulseTrigger] = useState<number>(0);
 
+  const activeFlowRef = useRef(activeFlow);
+  useEffect(() => { activeFlowRef.current = activeFlow; }, [activeFlow]);
+
+  const isAutoOrbitRef = useRef(isAutoOrbit);
+  useEffect(() => { isAutoOrbitRef.current = isAutoOrbit; }, [isAutoOrbit]);
+
   const selectedNode = ARCHITECTURE_NODES[selectedNodeId] || ARCHITECTURE_NODES.memtable;
 
   // Flow explanations
@@ -287,13 +293,13 @@ export function ThreeArchitectureVisualizer() {
     camera.lookAt(0, 0.5, 0);
 
     const renderer = new THREE.WebGLRenderer({
-      antialias: true,
+      antialias: false,
       alpha: false,
-      powerPreference: "high-performance"
+      powerPreference: "low-power"
     });
     renderer.setClearColor(0x09090b, 1);
     renderer.setSize(width, height);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.25));
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.1;
     container.appendChild(renderer.domElement);
@@ -357,15 +363,14 @@ export function ThreeArchitectureVisualizer() {
       const geom = new THREE.BoxGeometry(w, h, d);
 
       // Glass core
-      const mat = new THREE.MeshPhysicalMaterial({
+      const mat = new THREE.MeshStandardMaterial({
         color: 0x121218,
         roughness: 0.15,
-        metalness: 0.2,
-        transmission: 0.6,
+        metalness: 0.3,
         transparent: true,
         opacity: opacity,
-        clearcoat: 1.0,
-        clearcoatRoughness: 0.1
+        
+        
       });
       const mesh = new THREE.Mesh(geom, mat);
       mesh.userData = { nodeId };
@@ -422,13 +427,13 @@ export function ThreeArchitectureVisualizer() {
     walGroup.position.set(-2.5, 3.8, -3.5);
     {
       const cylGeom = new THREE.CylinderGeometry(1.3, 1.3, 3.2, 32);
-      const cylMat = new THREE.MeshPhysicalMaterial({
+      const cylMat = new THREE.MeshStandardMaterial({
         color: 0x16120e,
         roughness: 0.2,
-        transmission: 0.7,
+        metalness: 0.3,
         transparent: true,
         opacity: 0.85,
-        clearcoat: 1.0
+
       });
       const cylMesh = new THREE.Mesh(cylGeom, cylMat);
       cylMesh.userData = { nodeId: "wal" };
@@ -755,16 +760,22 @@ export function ThreeArchitectureVisualizer() {
     // -----------------------------------------------------------------
     // Animation Loop
     // -----------------------------------------------------------------
-    let animationFrameId: number;
+    let animationFrameId: number | null = null;
     let clock = new THREE.Clock();
+    let frameCount = 0;
+    let isVisible = true;
 
     const animate = () => {
+      if (!isVisible) {
+        animationFrameId = null;
+        return;
+      }
       animationFrameId = requestAnimationFrame(animate);
       const delta = clock.getDelta();
       const elapsed = clock.getElapsedTime();
 
       // Slow cinematic auto-orbit
-      if (isAutoOrbit) {
+      if (isAutoOrbitRef.current) {
         spherical.theta += delta * 0.06;
         updateCamera();
       }
@@ -779,7 +790,7 @@ export function ThreeArchitectureVisualizer() {
 
       // Update conduits and packet visibility according to active flow
       conduits.forEach((c) => {
-        const isCurrent = c.flow === activeFlow;
+        const isCurrent = c.flow === activeFlowRef.current;
         const mat = c.tubeMesh.material as THREE.MeshStandardMaterial;
         mat.opacity = isCurrent ? 0.85 : 0.08;
         mat.emissiveIntensity = isCurrent ? 0.8 : 0.02;
@@ -787,7 +798,7 @@ export function ThreeArchitectureVisualizer() {
 
       // Update packet positions along active conduits
       packetMeshes.forEach((pkt) => {
-        const isCurrent = pkt.conduit.flow === activeFlow;
+        const isCurrent = pkt.conduit.flow === activeFlowRef.current;
         pkt.mesh.visible = isCurrent;
         if (!isCurrent) return;
 
@@ -818,12 +829,25 @@ export function ThreeArchitectureVisualizer() {
           };
         }
       });
-      setScreenCoords(newCoords);
+      frameCount++;
+      if (frameCount % 4 === 0) {
+        setScreenCoords(newCoords);
+      }
 
       renderer.render(scene, camera);
     };
 
     animate();
+
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((e) => {
+        isVisible = e.isIntersecting;
+        if (isVisible && !animationFrameId) {
+          animate();
+        }
+      });
+    }, { threshold: 0.05 });
+    observer.observe(container);
 
     const handleResize = () => {
       if (!container) return;
@@ -836,7 +860,8 @@ export function ThreeArchitectureVisualizer() {
     window.addEventListener("resize", handleResize);
 
     return () => {
-      cancelAnimationFrame(animationFrameId);
+      observer.disconnect();
+      if (animationFrameId) cancelAnimationFrame(animationFrameId);
       window.removeEventListener("resize", handleResize);
       dom.removeEventListener("pointerdown", onPointerDown);
       window.removeEventListener("pointermove", onPointerMove);
@@ -847,7 +872,7 @@ export function ThreeArchitectureVisualizer() {
       }
       renderer.dispose();
     };
-  }, [activeFlow, isAutoOrbit, pulseTrigger]);
+  }, []);
 
   return (
     <div className="w-full flex flex-col items-center select-none">

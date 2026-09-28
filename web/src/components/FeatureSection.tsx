@@ -54,13 +54,13 @@ export function FeatureSection() {
                 className="text-[#ffffff] text-[22px] leading-[1.33] tracking-[-0.11px] font-normal mb-6 min-h-[58px] flex items-center justify-center transition-transform group-hover:-translate-y-1"
                 style={{ fontFamily: "var(--font-davinci)" }}
               >
-                MemTable & WAL Durability
+                MemTable &amp; WAL Durability
               </h3>
 
-              {/* Circular crop of classical painting (~200px diameter, no border, no shadow) */}
+              {/* Circular crop of classical painting (~200px diameter, web-optimized asset for low RAM) */}
               <div className="w-[200px] h-[200px] rounded-full overflow-hidden mb-6 shrink-0 bg-[#808080]">
                 <img
-                  src="/paintings/hare_hd.jpg"
+                  src="/paintings/hare.jpg"
                   alt="Jan Fyt — Hare study representing MemTable durability"
                   className="w-full h-full object-cover grayscale-0 group-hover:scale-110 transition-transform duration-700"
                 />
@@ -100,10 +100,10 @@ export function FeatureSection() {
                 Bloom Filter Indexing
               </h3>
 
-              {/* Circular crop of classical painting (~200px diameter, no border, no shadow) */}
+              {/* Circular crop of classical painting (~200px diameter, web-optimized asset for low RAM) */}
               <div className="w-[200px] h-[200px] rounded-full overflow-hidden mb-6 shrink-0 bg-[#808080]">
                 <img
-                  src="/paintings/amphora_hd.jpg"
+                  src="/paintings/amphora.jpg"
                   alt="Orsola Caccia — Amphora study representing SSTable Bloom indexing"
                   className="w-full h-full object-cover grayscale-0 group-hover:scale-110 transition-transform duration-700"
                 />
@@ -143,10 +143,10 @@ export function FeatureSection() {
                 Streaming Pub/Sub Broker
               </h3>
 
-              {/* Circular crop of classical painting (~200px diameter, no border, no shadow) */}
+              {/* Circular crop of classical painting (~200px diameter, web-optimized asset for low RAM) */}
               <div className="w-[200px] h-[200px] rounded-full overflow-hidden mb-6 shrink-0 bg-[#808080]">
                 <img
-                  src="/paintings/butterfly_hd.jpg"
+                  src="/paintings/butterfly.jpg"
                   alt="Joris Hoefnagel — Butterfly study representing real-time message fan-out"
                   className="w-full h-full object-cover grayscale-0 group-hover:scale-110 transition-transform duration-700"
                 />
