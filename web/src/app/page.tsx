@@ -88,47 +88,48 @@ export default function SiderCloudLanding() {
       </div>
 
       {/* 2. FLOATING NAV PILL (LaunchDarkly signature 60px pill) */}
-      <div className="w-full max-w-[1100px] mx-auto pt-6 px-4 sticky top-12 z-40">
-        <header className="w-full bg-[#191919] border border-white/10 rounded-[60px] px-6 h-14 flex items-center justify-between shadow-[0_4px_20px_rgba(0,0,0,0.45)] backdrop-blur-md">
-          <Link href="/" className="flex items-center gap-3">
+      <div className="w-full max-w-[1240px] mx-auto pt-6 px-4 sticky top-12 z-40">
+        <header className="w-full bg-[#191919] border border-white/10 rounded-[60px] px-5 sm:px-6 h-14 flex items-center justify-between gap-3 shadow-[0_4px_20px_rgba(0,0,0,0.45)] backdrop-blur-md">
+          {/* Brand Left (No Wrap, Strict Horizontal Alignment) */}
+          <Link href="/" className="flex items-center gap-2.5 shrink-0 whitespace-nowrap">
             <SiderLogo size={24} />
-            <div className="flex items-center gap-2">
-              <span className="text-[15px] font-medium text-white tracking-[-0.02em]">
+            <div className="flex items-center gap-2 whitespace-nowrap">
+              <span className="text-[15px] font-medium text-white tracking-[-0.02em] whitespace-nowrap">
                 Sider Cloud
               </span>
-              <span className="text-[10px] font-mono uppercase bg-[#405bff]/20 text-[#7084ff] border border-[#405bff]/40 px-2 py-0.5 rounded-[30px]">
+              <span className="text-[10px] font-mono uppercase bg-[#405bff]/20 text-[#7084ff] border border-[#405bff]/40 px-2 py-0.5 rounded-[30px] whitespace-nowrap">
                 ind-tbn-1
               </span>
             </div>
           </Link>
 
-          {/* Center Links */}
-          <nav className="hidden md:flex items-center gap-5 text-[13px] text-[#d1d3d4] font-medium">
-            <a href="#build" className="text-[#00f0ff] hover:text-white transition-colors flex items-center gap-1.5 font-semibold">
+          {/* Center Links (Clean Nav, No Collisions) */}
+          <nav className="hidden lg:flex items-center gap-5 text-[13px] text-[#d1d3d4] font-medium shrink-0">
+            <a href="#build" className="text-[#00f0ff] hover:text-white transition-colors flex items-center gap-1.5 font-semibold whitespace-nowrap">
               <span>Build Quests</span>
-              <span className="text-[9px] font-mono px-1.5 py-0.2 rounded-full bg-[#00f0ff]/20 text-[#00f0ff] border border-[#00f0ff]/30">
+              <span className="text-[9px] font-mono px-1.5 py-0.2 rounded-full bg-[#00f0ff]/20 text-[#00f0ff] border border-[#00f0ff]/30 whitespace-nowrap">
                 NEW
               </span>
             </a>
-            <a href="#docs" className="hover:text-white transition-colors">
+            <a href="#docs" className="hover:text-white transition-colors whitespace-nowrap">
               Documentation
             </a>
-            <a href="#console-wizard" className="hover:text-white transition-colors">
+            <a href="#console-wizard" className="hover:text-white transition-colors whitespace-nowrap">
               Access Cockpit
             </a>
-            <a href="#specs" className="hover:text-white transition-colors">
+            <a href="#specs" className="hover:text-white transition-colors whitespace-nowrap">
               Hardware Specs
             </a>
-            <a href="#quickstart" className="hover:text-white transition-colors">
+            <a href="#quickstart" className="hover:text-white transition-colors whitespace-nowrap">
               SDKs
             </a>
           </nav>
 
           {/* Right Actions with Dynamic Clerk Auth */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5 sm:gap-3 shrink-0 whitespace-nowrap">
             {isLoaded && isSignedIn && (
               <div className="flex items-center gap-2">
-                <span className="text-[12px] font-mono text-[#a7a9ac] hidden sm:inline">
+                <span className="text-[11px] font-mono text-[#a7a9ac] hidden xl:inline max-w-[140px] truncate whitespace-nowrap">
                   {user?.primaryEmailAddress?.emailAddress || "Developer"}
                 </span>
                 <UserButton />
@@ -138,13 +139,13 @@ export default function SiderCloudLanding() {
               <div className="flex items-center gap-2">
                 <Link
                   href="/sign-in"
-                  className="px-3.5 py-1 text-[13px] font-medium text-[#d1d3d4] hover:text-white transition-colors"
+                  className="px-3 py-1 text-[13px] font-medium text-[#d1d3d4] hover:text-white transition-colors whitespace-nowrap"
                 >
                   Sign in
                 </Link>
                 <Link
                   href="/sign-up"
-                  className="px-4 py-1.5 rounded-[30px] border border-[#414042] bg-[#191919] hover:bg-[#2c2c2c] text-[13px] font-medium text-white transition-colors hidden sm:inline-block"
+                  className="px-4 py-1.5 rounded-[30px] border border-[#414042] bg-[#191919] hover:bg-[#2c2c2c] text-[13px] font-medium text-white transition-colors hidden sm:inline-block whitespace-nowrap"
                 >
                   Sign up
                 </Link>
@@ -153,7 +154,7 @@ export default function SiderCloudLanding() {
 
             <Link
               href="/console"
-              className="px-5 py-1.5 rounded-[30px] bg-[#405bff] hover:bg-[#344bd6] text-white text-[13px] font-medium transition-all shadow-[0_0_20px_rgba(64,91,255,0.4)] flex items-center gap-1.5"
+              className="px-4 sm:px-5 py-1.5 rounded-[30px] bg-[#405bff] hover:bg-[#344bd6] text-white text-[13px] font-medium transition-all shadow-[0_0_20px_rgba(64,91,255,0.4)] flex items-center gap-1.5 shrink-0 whitespace-nowrap"
             >
               <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
               <span>Console</span>
