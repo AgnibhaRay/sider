@@ -36,36 +36,47 @@ interface KeyRecord {
 }
 
 interface InstanceStats {
+  name?: string;
+  port?: string;
+  http_port?: string;
+  version?: string;
+  status?: string;
+  uptime_seconds?: number;
   memtable_entries?: number;
   memtable_bytes?: number;
+  memtable_limit?: number;
   sstables_count?: number;
   sstables_bytes?: number;
   wal_bytes?: number;
   total_ops?: number;
   ops_per_sec?: number;
   connected_clients?: number;
+  auth_required?: boolean;
 }
 
-// Built-in Demo instance for immediate sandbox testing without Tailscale
-const DEMO_INSTANCE: DatabaseInstance = {
-  id: "sdr-db-demo99",
-  name: "demo-production-store",
+// Default instance on the home desktop host
+const DEFAULT_INSTANCE: DatabaseInstance = {
+  id: "sdr-db-fe7b9912",
+  name: "alpha-production",
   region: "Home Desktop (i5-9600 • Arch Linux)",
   tcp_port: 4100,
   http_port: 5100,
-  token: "sdr_live_9a8bc43d0e2f1837c7",
+  token: "sdr_live_793855e4ec0e70901bef05344264ba98",
   status: "running",
-  connection_uri: "sider://default:sdr_live_9a8bc43d0e2f1837c7@100.95.206.7:4100",
+  connection_uri: "sider://default:sdr_live_793855e4ec0e70901bef05344264ba98@100.95.206.7:4100",
   http_endpoint: "http://100.95.206.7:5100",
-  created_at: new Date().toISOString()
+  created_at: "2026-09-28T15:05:56Z"
 };
+
+type LanguageId = "python" | "node" | "go" | "rust" | "java" | "csharp" | "curl" | "netcat";
 
 export default function SiderConsolePage() {
   const [supervisorHost, setSupervisorHost] = useState<string>("http://100.95.206.7:8080");
   const [isDemoMode, setIsDemoMode] = useState<boolean>(false);
-  const [databases, setDatabases] = useState<DatabaseInstance[]>([DEMO_INSTANCE]);
-  const [selectedDb, setSelectedDb] = useState<DatabaseInstance>(DEMO_INSTANCE);
-  const [activeTab, setActiveTab] = useState<"overview" | "monitor" | "browser" | "cli" | "metrics">("overview");
+  const [databases, setDatabases] = useState<DatabaseInstance[]>([DEFAULT_INSTANCE]);
+  const [selectedDb, setSelectedDb] = useState<DatabaseInstance>(DEFAULT_INSTANCE);
+  const [activeTab, setActiveTab] = useState<"overview" | "metrics" | "browser" | "monitor" | "cli">("overview");
+  const [activeLang, setActiveLang] = useState<LanguageId>("python");
   
   const [loading, setLoading] = useState<boolean>(false);
   const [supervisorOnline, setSupervisorOnline] = useState<boolean | null>(null);
@@ -76,6 +87,7 @@ export default function SiderConsolePage() {
   // Live Monitor Stream State
   const [events, setEvents] = useState<OperationEvent[]>([]);
   const [isMonitorPaused, setIsMonitorPaused] = useState<boolean>(false);
+  const [filterCmd, setFilterCmd] = useState<string>("ALL");
   const monitorEndRef = useRef<HTMLDivElement>(null);
 
   // Key-Value Explorer State
@@ -84,25 +96,29 @@ export default function SiderConsolePage() {
   const [newKey, setNewKey] = useState<string>("");
   const [newVal, setNewVal] = useState<string>("");
   const [newTTL, setNewTTL] = useState<string>("");
+  const [keyFilterTier, setKeyFilterTier] = useState<"ALL" | "memtable" | "sstable">("ALL");
 
   // CLI State
   const [cliInput, setCliInput] = useState<string>("");
-  const [cliHistory, setCliHistory] = useState<{ cmd: string; resp: string }[]>([
-    { cmd: "AUTH " + selectedDb.token, resp: "OK" },
-    { cmd: "INFO", resp: "# Sider Server v2.1.0\r\nstatus:online\r\nengine:LSM-Tree\r\n" }
+  const [cliHistory, setCliHistory] = useState<{ cmd: string; resp: string; time: string }[]>([
+    { cmd: "AUTH " + selectedDb.token, resp: "OK", time: "0.12ms" },
+    { cmd: "INFO", resp: "# Sider Server v2.1.0\r\nstatus:online\r\nengine:LSM-Tree\r\nwal_bytes:51\r\nmemtable_entries:1\r\nsstables_count:0", time: "0.24ms" }
   ]);
   const cliBottomRef = useRef<HTMLDivElement>(null);
 
   // Stats State
   const [stats, setStats] = useState<InstanceStats>({
-    memtable_entries: 14,
-    memtable_bytes: 4280,
-    sstables_count: 2,
-    sstables_bytes: 184000,
-    wal_bytes: 1240,
-    total_ops: 8940,
-    ops_per_sec: 142.5,
-    connected_clients: 3
+    memtable_entries: 1,
+    memtable_bytes: 58,
+    memtable_limit: 100,
+    sstables_count: 0,
+    sstables_bytes: 0,
+    wal_bytes: 51,
+    total_ops: 2,
+    ops_per_sec: 0,
+    connected_clients: 1,
+    status: "online",
+    version: "2.1.0"
   });
 
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
@@ -127,8 +143,6 @@ export default function SiderConsolePage() {
           if (!selectedDb || !data.databases.find((d: DatabaseInstance) => d.id === selectedDb.id)) {
             setSelectedDb(data.databases[0]);
           }
-        } else {
-          setDatabases([]);
         }
       } else {
         setSupervisorOnline(false);
@@ -150,11 +164,11 @@ export default function SiderConsolePage() {
   const fetchKeys = async () => {
     if (isDemoMode) {
       setKeys([
-        { key: "users:101:profile", value: '{"name": "Alice", "role": "admin"}', ttl: -1, tier: "memtable" },
-        { key: "users:102:profile", value: '{"name": "Bob", "role": "engineer"}', ttl: -1, tier: "memtable" },
-        { key: "session:token:9a7f", value: "active_user_sess_xyz", ttl: 245, tier: "memtable" },
+        { key: "user:1001", value: '{"name": "Agnibha", "role": "admin"}', ttl: -1, tier: "memtable" },
+        { key: "users:session:9a7f", value: "active_user_sess_xyz", ttl: 245, tier: "memtable" },
         { key: "cache:products:featured", value: '["prod_1", "prod_2", "prod_9"]', ttl: 1180, tier: "sstable" },
-        { key: "analytics:pageviews:home", value: "19402", ttl: -1, tier: "sstable" }
+        { key: "analytics:pageviews:home", value: "19402", ttl: -1, tier: "sstable" },
+        { key: "config:rate_limit:burst", value: "500", ttl: -1, tier: "memtable" }
       ]);
       return;
     }
@@ -167,13 +181,20 @@ export default function SiderConsolePage() {
         setKeys(data.keys || []);
       }
     } catch {
-      // Fallback
+      // Offline fallback
     }
   };
 
   // 3. Fetch Stats for Active Instance
   const fetchStats = async () => {
-    if (isDemoMode) return;
+    if (isDemoMode) {
+      setStats((prev) => ({
+        ...prev,
+        ops_per_sec: Math.floor(Math.random() * 220) + 120,
+        total_ops: (prev.total_ops || 1000) + 3
+      }));
+      return;
+    }
     try {
       const res = await fetch(`${selectedDb.http_endpoint}/api/stats`);
       if (res.ok) {
@@ -198,9 +219,8 @@ export default function SiderConsolePage() {
   // 4. Live Command Monitor (SSE Stream or Simulation)
   useEffect(() => {
     if (isDemoMode) {
-      // Simulate live incoming traffic in Demo mode
-      const commands = ["PUT", "GET", "PUTEX", "PUBLISH", "TTL"];
-      const keysSample = ["user:profile:104", "session:tok_8a", "alerts:hospital", "cache:orders:991"];
+      const commands = ["PUT", "GET", "PUTEX", "PUBLISH", "TTL", "DEL"];
+      const keysSample = ["user:1001", "session:tok_8a", "cache:hero", "order:991", "telemetry:ping"];
       const interval = setInterval(() => {
         if (isMonitorPaused) return;
         const cmd = commands[Math.floor(Math.random() * commands.length)];
@@ -210,16 +230,15 @@ export default function SiderConsolePage() {
           client_addr: "100.95.206.7:" + (49152 + Math.floor(Math.random() * 1000)),
           command: cmd,
           key: k,
-          latency_us: Math.floor(Math.random() * 250) + 45,
+          latency_us: Math.floor(Math.random() * 190) + 35,
           status: "OK",
-          storage_tier: Math.random() > 0.3 ? "memtable" : "sstable"
+          storage_tier: Math.random() > 0.35 ? "memtable" : "sstable"
         };
-        setEvents((prev) => [...prev.slice(-100), newEvt]);
-      }, 1600);
+        setEvents((prev) => [...prev.slice(-150), newEvt]);
+      }, 1400);
       return () => clearInterval(interval);
     }
 
-    // Connect to real SSE endpoint
     let eventSource: EventSource | null = null;
     try {
       eventSource = new EventSource(`${selectedDb.http_endpoint}/api/events`);
@@ -296,13 +315,16 @@ export default function SiderConsolePage() {
     if (!cliInput.trim()) return;
     const cmd = cliInput.trim();
     setCliInput("");
+    const startTime = performance.now();
 
     if (isDemoMode) {
       let resp = "OK";
-      if (cmd.startsWith("GET")) resp = '"demo_value_response"';
-      else if (cmd.startsWith("INFO")) resp = "# Sider Server v2.1.0\r\nstatus:online\r\nmemtable_entries:14\r\n";
+      if (cmd.startsWith("GET")) resp = '"demo_value_payload"';
+      else if (cmd.startsWith("INFO")) resp = "# Sider Server v2.1.0\r\nstatus:online\r\nmemtable_entries:14\r\nengine:LSM-Tree";
       else if (cmd.startsWith("PING")) resp = "PONG";
-      setCliHistory((prev) => [...prev, { cmd, resp }]);
+      else if (cmd.startsWith("TTL")) resp = "240";
+      const timeMs = (performance.now() - startTime).toFixed(2) + "ms";
+      setCliHistory((prev) => [...prev, { cmd, resp, time: timeMs }]);
       return;
     }
 
@@ -313,11 +335,13 @@ export default function SiderConsolePage() {
         body: JSON.stringify({ command: cmd, token: selectedDb.token })
       });
       const data = await res.json();
-      setCliHistory((prev) => [...prev, { cmd, resp: data.response }]);
+      const timeMs = (performance.now() - startTime).toFixed(2) + "ms";
+      setCliHistory((prev) => [...prev, { cmd, resp: data.response, time: timeMs }]);
       fetchKeys();
       fetchStats();
     } catch {
-      setCliHistory((prev) => [...prev, { cmd, resp: "ERR connection failed" }]);
+      const timeMs = (performance.now() - startTime).toFixed(2) + "ms";
+      setCliHistory((prev) => [...prev, { cmd, resp: "ERR connection failed to instance HTTP gateway", time: timeMs }]);
     }
   };
 
@@ -351,6 +375,7 @@ export default function SiderConsolePage() {
     setNewVal("");
     setNewTTL("");
     fetchKeys();
+    fetchStats();
   };
 
   // Delete Key Action
@@ -365,71 +390,302 @@ export default function SiderConsolePage() {
       body: JSON.stringify({ command: `DEL ${key}`, token: selectedDb.token })
     });
     fetchKeys();
+    fetchStats();
+  };
+
+  // Filtered keys
+  const filteredKeys = keys.filter((k) => {
+    if (keyFilterTier !== "ALL" && k.tier !== keyFilterTier) return false;
+    if (searchQuery && !k.key.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+    return true;
+  });
+
+  // Filtered events
+  const filteredEvents = events.filter((e) => {
+    if (filterCmd !== "ALL" && e.command !== filterCmd) return false;
+    return true;
+  });
+
+  // Code snippet generators
+  const getSnippet = (lang: LanguageId): string => {
+    const host = "100.95.206.7";
+    const port = selectedDb.tcp_port;
+    const token = selectedDb.token;
+    const httpPort = selectedDb.http_port;
+
+    switch (lang) {
+      case "python":
+        return `import socket
+
+class SiderClient:
+    def __init__(self, host="${host}", port=${port}, token="${token}"):
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock.connect((host, port))
+        if token:
+            self._send(f"AUTH {token}")
+
+    def _send(self, cmd: str) -> str:
+        self.sock.sendall((cmd + "\\n").encode("utf-8"))
+        return self.sock.recv(4096).decode("utf-8").strip()
+
+    def set(self, key: str, value: str) -> str:
+        return self._send(f"PUT {key} {value}")
+
+    def get(self, key: str) -> str:
+        return self._send(f"GET {key}")
+
+# Usage:
+db = SiderClient()
+db.set("user:101", '{"name":"Alice","role":"admin"}')
+print("Value:", db.get("user:101"))`;
+
+      case "node":
+        return `import net from "node:net";
+
+class SiderClient {
+  private client = new net.Socket();
+
+  async connect(host = "${host}", port = ${port}, token = "${token}"): Promise<void> {
+    return new Promise((resolve) => {
+      this.client.connect(port, host, () => {
+        this.command(\`AUTH \${token}\`).then(() => resolve());
+      });
+    });
+  }
+
+  command(cmd: string): Promise<string> {
+    return new Promise((resolve) => {
+      this.client.once("data", (data) => resolve(data.toString().trim()));
+      this.client.write(\`\${cmd}\\n\`);
+    });
+  }
+}
+
+// Usage:
+const db = new SiderClient();
+await db.connect();
+await db.command('PUT user:101 "Alice"');
+console.log(await db.command('GET user:101'));`;
+
+      case "go":
+        return `package main
+
+import (
+\t"bufio"
+\t"fmt"
+\t"net"
+)
+
+func main() {
+\tconn, err := net.Dial("tcp", "${host}:${port}")
+\tif err != nil {
+\t\tpanic(err)
+\t}
+\tdefer conn.Close()
+
+\treader := bufio.NewReader(conn)
+
+\t// 1. Authenticate with instance token
+\tfmt.Fprintf(conn, "AUTH ${token}\\n")
+\tresp, _ := reader.ReadString('\\n')
+\tfmt.Println("Auth:", resp)
+
+\t// 2. Set key-value
+\tfmt.Fprintf(conn, "PUT cluster:status healthy\\n")
+\tresp, _ = reader.ReadString('\\n')
+
+\t// 3. Query key
+\tfmt.Fprintf(conn, "GET cluster:status\\n")
+\tval, _ := reader.ReadString('\\n')
+\tfmt.Println("Status:", val)
+}`;
+
+      case "rust":
+        return `use std::io::{BufRead, BufReader, Write};
+use std::net::TcpStream;
+
+fn main() -> std::io::Result<()> {
+    let mut stream = TcpStream::connect("${host}:${port}")?;
+    let mut reader = BufReader::new(stream.try_clone()?);
+
+    // 1. Authenticate
+    writeln!(stream, "AUTH {}", "${token}")?;
+    let mut auth_resp = String::new();
+    reader.read_line(&mut auth_resp)?;
+
+    // 2. Put key
+    writeln!(stream, "PUT metrics:latency 42us")?;
+    let mut put_resp = String::new();
+    reader.read_line(&mut put_resp)?;
+
+    // 3. Get key
+    writeln!(stream, "GET metrics:latency")?;
+    let mut get_resp = String::new();
+    reader.read_line(&mut get_resp)?;
+    println!("Response: {}", get_resp.trim());
+
+    Ok(())
+}`;
+
+      case "java":
+        return `import java.io.*;
+import java.net.Socket;
+
+public class SiderQuickstart {
+    public static void main(String[] args) throws Exception {
+        try (Socket socket = new Socket("${host}", ${port});
+             PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
+             BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
+
+            // 1. Authenticate
+            out.println("AUTH ${token}");
+            System.out.println("Auth: " + in.readLine());
+
+            // 2. Write key
+            out.println("PUT order:2049 '{\\"items\\": 4}'");
+            System.out.println("Put: " + in.readLine());
+
+            // 3. Read key
+            out.println("GET order:2049");
+            System.out.println("Value: " + in.readLine());
+        }
+    }
+}`;
+
+      case "csharp":
+        return `using System;
+using System.IO;
+using System.Net.Sockets;
+
+class SiderClient {
+    static void Main() {
+        using var client = new TcpClient("${host}", ${port});
+        using var stream = client.GetStream();
+        using var reader = new StreamReader(stream);
+        using var writer = new StreamWriter(stream) { AutoFlush = true };
+
+        // 1. Authenticate
+        writer.WriteLine("AUTH ${token}");
+        Console.WriteLine($"Auth: {reader.ReadLine()}");
+
+        // 2. Write
+        writer.WriteLine("PUT session:token 'active_abc'");
+        Console.WriteLine($"Put: {reader.ReadLine()}");
+
+        // 3. Read
+        writer.WriteLine("GET session:token");
+        Console.WriteLine($"Value: {reader.ReadLine()}");
+    }
+}`;
+
+      case "curl":
+        return `# 1. Execute query via HTTP REST gateway
+curl -X POST "http://${host}:${httpPort}/api/exec" \\
+  -H "Content-Type: application/json" \\
+  -d '{"command": "PUT api:token secret", "token": "${token}"}'
+
+# 2. Inspect real-time database stats
+curl -s "http://${host}:${httpPort}/api/stats"
+
+# 3. Query all keys
+curl -s "http://${host}:${httpPort}/api/keys"`;
+
+      case "netcat":
+        return `# Raw TCP Pipeline over netcat
+printf "AUTH ${token}\\nPUT alpha:ping pong\\nGET alpha:ping\\nINFO\\n" | nc ${host} ${port}`;
+    }
   };
 
   return (
-    <div className="min-h-screen bg-[#07070a] text-white flex flex-col font-sans select-none">
-      {/* Top Studio Header */}
-      <header className="w-full bg-[#0c0c12] border-b border-[#1f1f2e] px-6 h-16 flex items-center justify-between sticky top-0 z-50">
-        <div className="flex items-center gap-4">
-          <Link href="/" className="flex items-center gap-2.5 group">
-            <SiderLogo size={32} />
+    <div
+      className="min-h-screen text-[#1b1b1b] flex flex-col font-sans select-none antialiased"
+      style={{ backgroundColor: "#eaeaea", fontFamily: "var(--font-inter), sans-serif" }}
+    >
+      {/* 1. TOP ANNOUNCEMENT BAR (Grafbase Forest-to-Deep-Teal Gradient) */}
+      <div
+        className="w-full h-10 px-4 text-white text-[13px] font-medium flex items-center justify-center gap-2 shadow-sm z-50 sticky top-0"
+        style={{
+          background: "linear-gradient(89.97deg, rgb(25, 160, 95) 0.02%, rgb(13, 127, 140) 123.85%)"
+        }}
+      >
+        <span>
+          <strong>Sider Cloud v2.1.0</strong>: Zero-dependency LSM storage with native SkipList MemTable, WAL durability & SSTable tiering.
+        </span>
+        <Link href="/" className="underline hover:opacity-85 font-medium ml-1">
+          Explore Architecture &rarr;
+        </Link>
+      </div>
+
+      {/* 2. CLINICAL MARBLE NAVIGATION BAR */}
+      <header className="w-full bg-[#ffffff] border-b border-[#e0e1e6] px-6 h-16 flex items-center justify-between sticky top-10 z-40">
+        <div className="flex items-center gap-6">
+          <Link href="/" className="flex items-center gap-3 group">
+            <SiderLogo size={28} />
             <div className="flex flex-col">
-              <span className="font-mono text-[14px] font-semibold tracking-wider text-white">
-                SIDER CLOUD
+              <span
+                className="text-[15px] font-semibold text-[#1b1b1b] tracking-[-0.03em]"
+                style={{ letterSpacing: "-0.5px" }}
+              >
+                Sider Cloud
               </span>
-              <span className="text-[10px] text-[#9ca3af] font-mono">
-                LSM-Tree Database Console
+              <span className="text-[11px] text-[#60646c] font-normal leading-tight">
+                LSM-Tree Console
               </span>
             </div>
           </Link>
-          <span className="text-[#27273a] hidden sm:inline">|</span>
-          <div className="hidden sm:flex items-center gap-2 font-mono text-[11px] bg-[#14141e] px-2.5 py-1 rounded-[6px] border border-[#27273a]">
-            <span className="text-[#6b7280]">SUPERVISOR:</span>
-            <span className="text-[#38bdf8] truncate max-w-[200px]">{supervisorHost}</span>
-            <span
-              className={`w-2 h-2 rounded-full ${
-                isDemoMode ? "bg-[#eab308]" : supervisorOnline ? "bg-[#10b981]" : "bg-[#ef4444]"
-              }`}
-            />
+
+          <div className="hidden lg:flex items-center gap-2 pl-4 border-l border-[#e0e1e6]">
+            <span className="text-[12px] text-[#60646c]">Control Plane:</span>
+            <span className="text-[12px] font-mono text-[#1b1b1b] bg-[#eaeaea] px-2 py-0.5 rounded-[4px] border border-[#e0e1e6]">
+              {supervisorHost}
+            </span>
+            <div className="flex items-center gap-1.5 ml-1">
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  isDemoMode ? "bg-[#eab308]" : supervisorOnline ? "bg-[#0d7f8c]" : "bg-[#ef4444]"
+                }`}
+              />
+              <span className="text-[11px] text-[#7c7c7c]">
+                {isDemoMode ? "Sandbox" : supervisorOnline ? "Live" : "Connecting"}
+              </span>
+            </div>
           </div>
         </div>
 
-        {/* Right Actions: Mode Toggle & Docs */}
+        {/* Right Nav Actions */}
         <div className="flex items-center gap-3">
           <button
             onClick={() => setIsDemoMode((prev) => !prev)}
-            className={`px-3 py-1.5 rounded-[6px] text-[11px] font-mono border transition-all ${
-              isDemoMode
-                ? "bg-[#eab308]/20 text-[#eab308] border-[#eab308]/50"
-                : "bg-[#14141e] text-[#9ca3af] border-[#27273a] hover:text-white"
-            }`}
+            className="px-3.5 py-1.5 rounded-[40px] text-[13px] font-medium border border-[#e0e1e6] bg-[#ffffff] text-[#1b1b1b] hover:bg-[#eaeaea]/50 transition-colors"
           >
-            {isDemoMode ? "🟡 Sandbox Demo Mode" : "🟢 Desktop Cloud (Live)"}
+            {isDemoMode ? "🟡 Sandbox Simulated" : "🟢 Desktop Host (Tailscale)"}
           </button>
-          <Link
-            href="/"
-            className="text-[12px] font-mono text-[#9ca3af] hover:text-white transition-colors"
+
+          <button
+            onClick={() => setShowNewDbModal(true)}
+            className="px-4 py-2 rounded-[6px] text-[13px] font-medium text-white bg-[#1b1b1b] hover:opacity-90 transition-all shadow-[0px_4px_20px_0px_rgba(0,0,0,0.15)] flex items-center gap-1.5"
           >
-            &larr; Landing Page
-          </Link>
+            <span className="text-base leading-none">+</span>
+            <span>New Database</span>
+          </button>
         </div>
       </header>
 
-      {/* Main Workspace Layout */}
-      <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
-        {/* Left Sidebar: Databases List */}
-        <aside className="w-full md:w-72 bg-[#09090e] border-r border-[#1f1f2e] p-4 flex flex-col justify-between shrink-0">
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <span className="text-[11px] font-mono uppercase tracking-wider text-[#6b7280]">
-                My Databases ({databases.length})
+      {/* 3. MAIN WORKSPACE (Max 1280px Blueprint Container) */}
+      <div className="flex-1 w-full max-w-[1360px] mx-auto p-4 sm:p-6 lg:p-8 flex flex-col lg:flex-row gap-6">
+        
+        {/* LEFT COLUMN: ARCHITECTURAL INSTANCE NAV (280px) */}
+        <aside className="w-full lg:w-72 flex flex-col gap-4 shrink-0">
+          <div className="bg-[#ffffff] rounded-[20px] border border-[#e0e1e6] p-5 shadow-sm">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-[12px] font-semibold text-[#7c7c7c] uppercase tracking-wider">
+                Instances ({databases.length})
               </span>
               <button
-                onClick={() => setShowNewDbModal(true)}
-                className="px-2.5 py-1 rounded-[5px] bg-white text-black font-mono text-[11px] font-semibold hover:bg-neutral-200 transition-colors"
+                onClick={fetchDatabases}
+                className="text-[11px] text-[#60646c] hover:text-[#1b1b1b] underline"
               >
-                + New DB
+                Refresh
               </button>
             </div>
 
@@ -440,21 +696,21 @@ export default function SiderConsolePage() {
                   <div
                     key={db.id}
                     onClick={() => setSelectedDb(db)}
-                    className={`p-3 rounded-[8px] border cursor-pointer transition-all ${
+                    className={`p-3.5 rounded-[12px] border cursor-pointer transition-all ${
                       isSelected
-                        ? "bg-[#141420] border-[#38bdf8] shadow-[0_0_15px_rgba(56,189,248,0.15)]"
-                        : "bg-[#0e0e16] border-[#1f1f2e] hover:border-[#374151]"
+                        ? "bg-[#eaeaea]/60 border-[#1b1b1b] shadow-sm"
+                        : "bg-[#ffffff] border-[#e0e1e6] hover:border-[#b0b3ba]"
                     }`}
                   >
                     <div className="flex items-center justify-between">
-                      <span className="font-mono text-[13px] font-semibold text-white">
+                      <span className="text-[14px] font-semibold text-[#1b1b1b]">
                         {db.name}
                       </span>
-                      <span className="w-2 h-2 rounded-full bg-[#10b981]" />
+                      <span className="w-2 h-2 rounded-full bg-[#19a05f]" />
                     </div>
-                    <div className="flex items-center justify-between mt-1 text-[11px] font-mono text-[#9ca3af]">
+                    <div className="mt-1 flex items-center justify-between text-[11px] font-mono text-[#60646c]">
                       <span>PORT :{db.tcp_port}</span>
-                      <span className="text-[10px] text-[#6b7280]">{db.id.slice(0, 10)}</span>
+                      <span className="text-[10px] text-[#7c7c7c]">{db.id.slice(0, 10)}</span>
                     </div>
                   </div>
                 );
@@ -462,54 +718,90 @@ export default function SiderConsolePage() {
             </div>
           </div>
 
-          {/* Supervisor Health Footer */}
-          <div className="pt-4 border-t border-[#1f1f2e] mt-4 font-mono text-[11px] text-[#6b7280]">
-            <div>HOST: Arch Linux (i5-9600)</div>
-            <div>STATUS: {isDemoMode ? "Simulated" : supervisorOnline ? "Connected" : "Reconnecting..."}</div>
+          {/* HARDWARE BLUEPRINT CARD */}
+          <div className="bg-[#ffffff] rounded-[20px] border border-[#e0e1e6] p-5 text-[12px] space-y-2.5 shadow-sm">
+            <div className="text-[11px] font-semibold text-[#7c7c7c] uppercase tracking-wider">
+              Host Environment
+            </div>
+            <div className="flex items-center justify-between pt-1">
+              <span className="text-[#60646c]">Host Machine</span>
+              <span className="font-medium text-[#1b1b1b]">agnirockz</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-[#60646c]">Processor</span>
+              <span className="font-mono text-[#1b1b1b]">Intel i5-9600</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-[#60646c]">Memory</span>
+              <span className="font-mono text-[#1b1b1b]">16GB DDR4</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-[#60646c]">Operating System</span>
+              <span className="font-mono text-[#1b1b1b]">Arch Linux</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-[#60646c]">Tailscale IP</span>
+              <span className="font-mono text-[#0d7f8c] font-medium">100.95.206.7</span>
+            </div>
+            <div className="pt-2 border-t border-[#e0e1e6] flex items-center justify-between text-[11px]">
+              <span className="text-[#7c7c7c]">Storage Engine</span>
+              <span className="text-[#19a05f] font-medium">SkipList + LSM</span>
+            </div>
           </div>
         </aside>
 
-        {/* Center / Right Content: Database Workspace */}
-        <main className="flex-1 flex flex-col bg-[#07070a] overflow-y-auto">
-          {/* Active Database Header Banner */}
-          <div className="p-6 bg-[#0a0a10] border-b border-[#1f1f2e] flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
-            <div>
-              <div className="flex items-center gap-2 mb-1">
-                <h1 className="text-[22px] font-semibold text-white font-mono">
-                  {selectedDb.name}
-                </h1>
-                <span className="px-2 py-0.5 rounded-[4px] bg-[#10b981]/20 text-[#10b981] border border-[#10b981]/40 text-[10px] font-mono uppercase">
-                  {selectedDb.status}
-                </span>
-                <span className="px-2 py-0.5 rounded-[4px] bg-[#14141e] text-[#9ca3af] border border-[#27273a] text-[10px] font-mono">
-                  {selectedDb.region}
-                </span>
+        {/* RIGHT COLUMN: ACTIVE DATABASE BLUEPRINT WORKSPACE */}
+        <main className="flex-1 flex flex-col gap-6 min-w-0">
+          
+          {/* HEADER HERO CARD */}
+          <div className="bg-[#ffffff] rounded-[20px] border border-[#e0e1e6] p-6 lg:p-7 shadow-sm">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-[#e0e1e6]">
+              <div>
+                <div className="flex items-center gap-3">
+                  <h1
+                    className="text-[28px] sm:text-[36px] font-semibold text-[#1b1b1b]"
+                    style={{ letterSpacing: "-1px" }}
+                  >
+                    {selectedDb.name}
+                  </h1>
+                  <span className="px-2.5 py-0.5 rounded-[40px] text-[11px] font-medium bg-[#19a05f]/15 text-[#19a05f] border border-[#19a05f]/30">
+                    ONLINE
+                  </span>
+                </div>
+                <p className="text-[14px] text-[#60646c] mt-1">
+                  Single-tenant LSM instance isolated with dedicated WAL log and SSTable storage level.
+                </p>
               </div>
-              <div className="text-[12px] font-mono text-[#9ca3af] flex items-center gap-3">
-                <span>TCP PORT: <strong className="text-white">:{selectedDb.tcp_port}</strong></span>
-                <span>&bull;</span>
-                <span>HTTP GATEWAY: <strong className="text-[#38bdf8]">:{selectedDb.http_port}</strong></span>
-                <span>&bull;</span>
-                <span>ID: {selectedDb.id}</span>
+
+              {/* Quick Specs Badges */}
+              <div className="flex flex-wrap items-center gap-2 font-mono text-[12px]">
+                <div className="bg-[#eaeaea] px-3 py-1.5 rounded-[6px] border border-[#e0e1e6] flex items-center gap-1.5">
+                  <span className="text-[#7c7c7c]">TCP:</span>
+                  <strong className="text-[#1b1b1b]">:{selectedDb.tcp_port}</strong>
+                </div>
+                <div className="bg-[#eaeaea] px-3 py-1.5 rounded-[6px] border border-[#e0e1e6] flex items-center gap-1.5">
+                  <span className="text-[#7c7c7c]">HTTP:</span>
+                  <strong className="text-[#0d7f8c]">:{selectedDb.http_port}</strong>
+                </div>
               </div>
             </div>
 
-            {/* Navigation Tabs */}
-            <div className="flex flex-wrap items-center gap-1.5 bg-[#101018] p-1 rounded-[8px] border border-[#1f1f2e]">
+            {/* TAB SELECTOR (Clinical Segmented Control) */}
+            <div className="flex flex-wrap items-center gap-2 pt-4">
               {[
-                { id: "overview", label: "Overview & Connect" },
-                { id: "monitor", label: "Live Monitor (Stream)" },
-                { id: "browser", label: "Data Browser (Keys)" },
-                { id: "cli", label: "Web CLI Terminal" },
-                { id: "metrics", label: "LSM Telemetry" }
+                { id: "overview", label: "Overview & SDK Drivers" },
+                { id: "metrics", label: "LSM Telemetry & Storage" },
+                { id: "browser", label: `Data Browser (${keys.length})` },
+                { id: "monitor", label: `Live Monitor (${events.length})` },
+                { id: "cli", label: "Interactive Web CLI" }
               ].map((tab) => (
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id as any)}
-                  className={`px-3 py-1.5 rounded-[6px] text-[12px] font-mono transition-all ${
+                  className={`px-4 py-2 rounded-[6px] text-[13px] font-medium transition-all ${
                     activeTab === tab.id
-                      ? "bg-white text-black font-semibold shadow"
-                      : "text-[#9ca3af] hover:text-white"
+                      ? "bg-[#1b1b1b] text-white shadow-sm"
+                      : "bg-[#eaeaea]/60 text-[#60646c] hover:text-[#1b1b1b] hover:bg-[#eaeaea]"
                   }`}
                 >
                   {tab.label}
@@ -518,150 +810,380 @@ export default function SiderConsolePage() {
             </div>
           </div>
 
-          {/* TAB 1: OVERVIEW & CONNECT */}
+          {/* TAB 1: OVERVIEW & MULTI-LANGUAGE SDK DRIVERS */}
           {activeTab === "overview" && (
-            <div className="p-6 max-w-5xl space-y-6">
-              {/* Connection Strings Card */}
-              <div className="bg-[#0e0e16] border border-[#1f1f2e] rounded-[12px] p-5">
-                <span className="text-[11px] font-mono uppercase tracking-wider text-[#6b7280]">
-                  Connection URI (TCP Protocol)
+            <div className="space-y-6">
+              
+              {/* Connection Blueprint Card */}
+              <div className="bg-[#ffffff] rounded-[20px] border border-[#e0e1e6] p-6 shadow-sm">
+                <span className="text-[12px] font-semibold text-[#7c7c7c] uppercase tracking-wider">
+                  Connection Endpoint (URI)
                 </span>
-                <div className="mt-2 flex items-center justify-between gap-3 bg-[#050508] p-3 rounded-[8px] border border-[#27273a]">
-                  <code className="text-[#38bdf8] font-mono text-[13px] truncate">
+                <div className="mt-2.5 flex items-center justify-between gap-3 bg-[#eaeaea]/60 p-3.5 rounded-[8px] border border-[#e0e1e6]">
+                  <code className="text-[#1b1b1b] font-mono text-[13px] truncate font-medium">
                     {selectedDb.connection_uri}
                   </code>
                   <button
                     onClick={() => copyToClipboard(selectedDb.connection_uri, "uri")}
-                    className="px-3 py-1 rounded-[5px] bg-[#14141e] border border-[#27273a] text-[11px] font-mono text-[#9ca3af] hover:text-white shrink-0"
+                    className="px-3.5 py-1.5 rounded-[6px] bg-[#ffffff] border border-[#e0e1e6] text-[12px] font-medium text-[#1b1b1b] hover:bg-[#eaeaea] shrink-0"
                   >
                     {copiedKey === "uri" ? "✓ Copied" : "Copy URI"}
                   </button>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-4 pt-4 border-t border-[#1f1f2e]">
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 mt-5 pt-5 border-t border-[#e0e1e6] text-[13px]">
                   <div>
-                    <span className="text-[10px] font-mono text-[#6b7280]">HOST</span>
-                    <div className="font-mono text-[12px] text-white">100.95.206.7</div>
+                    <span className="text-[11px] text-[#7c7c7c] uppercase font-semibold">Host</span>
+                    <div className="font-mono text-[#1b1b1b] mt-0.5">100.95.206.7</div>
                   </div>
                   <div>
-                    <span className="text-[10px] font-mono text-[#6b7280]">PORT</span>
-                    <div className="font-mono text-[12px] text-white">{selectedDb.tcp_port}</div>
+                    <span className="text-[11px] text-[#7c7c7c] uppercase font-semibold">TCP Port</span>
+                    <div className="font-mono text-[#1b1b1b] mt-0.5">{selectedDb.tcp_port}</div>
                   </div>
                   <div>
-                    <span className="text-[10px] font-mono text-[#6b7280]">AUTH TOKEN</span>
-                    <div className="font-mono text-[12px] text-[#f59e0b] truncate">{selectedDb.token}</div>
+                    <span className="text-[11px] text-[#7c7c7c] uppercase font-semibold">HTTP Gateway</span>
+                    <div className="font-mono text-[#0d7f8c] mt-0.5">:{selectedDb.http_port}</div>
+                  </div>
+                  <div>
+                    <span className="text-[11px] text-[#7c7c7c] uppercase font-semibold">Auth Token</span>
+                    <div className="font-mono text-[#1b1b1b] mt-0.5 truncate">{selectedDb.token}</div>
                   </div>
                 </div>
               </div>
 
-              {/* Ready-to-use Code Snippets */}
-              <div className="bg-[#0e0e16] border border-[#1f1f2e] rounded-[12px] p-5">
-                <span className="text-[11px] font-mono uppercase tracking-wider text-[#6b7280]">
-                  Quickstart Driver Snippets
-                </span>
-
-                <div className="mt-4 space-y-4">
-                  {/* Python */}
+              {/* MULTI-LANGUAGE SDK DRIVERS CARD */}
+              <div className="bg-[#ffffff] rounded-[20px] border border-[#e0e1e6] p-6 shadow-sm">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
                   <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-[12px] font-mono text-[#38bdf8]">🐍 Python (Zero Dependencies)</span>
-                      <button
-                        onClick={() =>
-                          copyToClipboard(
-                            `import socket\ns = socket.socket()\ns.connect(("100.95.206.7", ${selectedDb.tcp_port}))\ns.sendall(b"AUTH ${selectedDb.token}\\n")\ns.sendall(b"PUT user:101 '{\\"name\\": \\"Alice\\"}'\\n")\nprint(s.recv(1024).decode())`,
-                            "py"
-                          )
-                        }
-                        className="text-[11px] font-mono text-[#6b7280] hover:text-white"
-                      >
-                        {copiedKey === "py" ? "✓ Copied" : "Copy"}
-                      </button>
-                    </div>
-                    <pre className="bg-[#050508] p-3 rounded-[6px] text-[12px] font-mono text-[#9ca3af] border border-[#1f1f2e]">
-                      <code>{`import socket
+                    <h2 className="text-[18px] font-semibold text-[#1b1b1b]" style={{ letterSpacing: "-0.5px" }}>
+                      Production Driver Quickstart
+                    </h2>
+                    <p className="text-[13px] text-[#60646c]">
+                      Plug-and-play drivers with native protocol formatting and automatic token authentication.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => copyToClipboard(getSnippet(activeLang), "snippet")}
+                    className="px-3.5 py-1.5 rounded-[6px] bg-[#1b1b1b] text-white text-[12px] font-medium hover:opacity-90 transition-opacity shrink-0"
+                  >
+                    {copiedKey === "snippet" ? "✓ Copied Code" : "Copy Snippet"}
+                  </button>
+                </div>
 
-s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-s.connect(("100.95.206.7", ${selectedDb.tcp_port}))
-s.sendall(b"AUTH ${selectedDb.token}\\n")
-s.sendall(b"PUT user:101 '{\\"name\\": \\"Alice\\"}'\\n")
-print(s.recv(1024).decode()) # OK`}</code>
-                    </pre>
+                {/* Language Switcher Tabs */}
+                <div className="flex flex-wrap gap-1.5 p-1 bg-[#eaeaea] rounded-[8px] border border-[#e0e1e6] mb-4">
+                  {[
+                    { id: "python", label: "Python" },
+                    { id: "node", label: "TypeScript / Node" },
+                    { id: "go", label: "Go" },
+                    { id: "rust", label: "Rust" },
+                    { id: "java", label: "Java (Spring)" },
+                    { id: "csharp", label: "C# (.NET)" },
+                    { id: "curl", label: "cURL / REST" },
+                    { id: "netcat", label: "Netcat / Bash" }
+                  ].map((lang) => (
+                    <button
+                      key={lang.id}
+                      onClick={() => setActiveLang(lang.id as LanguageId)}
+                      className={`px-3 py-1.5 rounded-[6px] text-[12px] font-medium transition-all ${
+                        activeLang === lang.id
+                          ? "bg-[#ffffff] text-[#1b1b1b] shadow-sm font-semibold"
+                          : "text-[#60646c] hover:text-[#1b1b1b]"
+                      }`}
+                    >
+                      {lang.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Code Viewer */}
+                <div className="relative rounded-[12px] border border-[#e0e1e6] bg-[#1b1b1b] p-4 text-[#eaeaea] font-mono text-[12.5px] overflow-x-auto leading-relaxed">
+                  <pre>
+                    <code>{getSnippet(activeLang)}</code>
+                  </pre>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 2: LSM METRICS & STORAGE TELEMETRY */}
+          {activeTab === "metrics" && (
+            <div className="space-y-6">
+              
+              {/* Telemetry Metric Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="bg-[#ffffff] rounded-[20px] border border-[#e0e1e6] p-5 shadow-sm">
+                  <span className="text-[11px] font-semibold text-[#7c7c7c] uppercase tracking-wider">
+                    MemTable RAM Keys
+                  </span>
+                  <div className="text-[32px] font-semibold text-[#1b1b1b] mt-1" style={{ letterSpacing: "-1px" }}>
+                    {stats.memtable_entries || 0}
+                  </div>
+                  <div className="text-[12px] text-[#19a05f] font-medium mt-1">
+                    SkipList $O(\log N)$ in Memory
+                  </div>
+                </div>
+
+                <div className="bg-[#ffffff] rounded-[20px] border border-[#e0e1e6] p-5 shadow-sm">
+                  <span className="text-[11px] font-semibold text-[#7c7c7c] uppercase tracking-wider">
+                    Immutable SSTables
+                  </span>
+                  <div className="text-[32px] font-semibold text-[#1b1b1b] mt-1" style={{ letterSpacing: "-1px" }}>
+                    {stats.sstables_count || 0} <span className="text-[16px] text-[#7c7c7c] font-normal">files</span>
+                  </div>
+                  <div className="text-[12px] text-[#0d7f8c] font-medium mt-1">
+                    Sorted Disk String Tables
+                  </div>
+                </div>
+
+                <div className="bg-[#ffffff] rounded-[20px] border border-[#e0e1e6] p-5 shadow-sm">
+                  <span className="text-[11px] font-semibold text-[#7c7c7c] uppercase tracking-wider">
+                    Write-Ahead Log (WAL)
+                  </span>
+                  <div className="text-[32px] font-semibold text-[#1b1b1b] mt-1" style={{ letterSpacing: "-1px" }}>
+                    {stats.wal_bytes || 0} <span className="text-[16px] text-[#7c7c7c] font-normal">bytes</span>
+                  </div>
+                  <div className="text-[12px] text-[#60646c] font-medium mt-1">
+                    Zero Data-Loss Durability
+                  </div>
+                </div>
+
+                <div className="bg-[#ffffff] rounded-[20px] border border-[#e0e1e6] p-5 shadow-sm">
+                  <span className="text-[11px] font-semibold text-[#7c7c7c] uppercase tracking-wider">
+                    Total Operations
+                  </span>
+                  <div className="text-[32px] font-semibold text-[#1b1b1b] mt-1" style={{ letterSpacing: "-1px" }}>
+                    {stats.total_ops || 0}
+                  </div>
+                  <div className="text-[12px] text-[#19a05f] font-medium mt-1">
+                    Sub-millisecond writes
+                  </div>
+                </div>
+              </div>
+
+              {/* Informative Architectural Breakdown */}
+              <div className="bg-[#ffffff] rounded-[20px] border border-[#e0e1e6] p-6 shadow-sm space-y-4">
+                <h3 className="text-[16px] font-semibold text-[#1b1b1b]">
+                  LSM Storage Engine Architecture
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+                  <div className="p-4 rounded-[12px] border border-[#e0e1e6] bg-[#eaeaea]/40">
+                    <div className="text-[13px] font-semibold text-[#1b1b1b] flex items-center justify-between">
+                      <span>1. Write-Ahead Log</span>
+                      <span className="text-[10px] font-mono bg-[#ffffff] px-1.5 py-0.5 rounded border border-[#e0e1e6]">Disk</span>
+                    </div>
+                    <p className="text-[12px] text-[#60646c] mt-2 leading-relaxed">
+                      Every incoming write (`PUT`, `PUTEX`, `DEL`) is appended sequentially to disk with an CRC32 checksum before memory insertion.
+                    </p>
                   </div>
 
-                  {/* Netcat CLI */}
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-[12px] font-mono text-[#10b981]">💻 Terminal / Netcat (nc)</span>
-                      <button
-                        onClick={() =>
-                          copyToClipboard(
-                            `printf "AUTH ${selectedDb.token}\\nPUT foo bar\\nGET foo\\n" | nc 100.95.206.7 ${selectedDb.tcp_port}`,
-                            "nc"
-                          )
-                        }
-                        className="text-[11px] font-mono text-[#6b7280] hover:text-white"
-                      >
-                        {copiedKey === "nc" ? "✓ Copied" : "Copy"}
-                      </button>
+                  <div className="p-4 rounded-[12px] border border-[#e0e1e6] bg-[#eaeaea]/40">
+                    <div className="text-[13px] font-semibold text-[#1b1b1b] flex items-center justify-between">
+                      <span>2. Active MemTable</span>
+                      <span className="text-[10px] font-mono bg-[#19a05f]/20 text-[#19a05f] px-1.5 py-0.5 rounded">RAM</span>
                     </div>
-                    <pre className="bg-[#050508] p-3 rounded-[6px] text-[12px] font-mono text-[#9ca3af] border border-[#1f1f2e]">
-                      <code>{`printf "AUTH ${selectedDb.token}\\nPUT foo bar\\nGET foo\\n" | nc 100.95.206.7 ${selectedDb.tcp_port}`}</code>
-                    </pre>
+                    <p className="text-[12px] text-[#60646c] mt-2 leading-relaxed">
+                      Lock-free concurrent SkipList maintaining lexicographically sorted keys. When capacity reaches threshold ({stats.memtable_limit || 100} keys), flush occurs.
+                    </p>
+                  </div>
+
+                  <div className="p-4 rounded-[12px] border border-[#e0e1e6] bg-[#eaeaea]/40">
+                    <div className="text-[13px] font-semibold text-[#1b1b1b] flex items-center justify-between">
+                      <span>3. SSTable + Bloom Filter</span>
+                      <span className="text-[10px] font-mono bg-[#0d7f8c]/20 text-[#0d7f8c] px-1.5 py-0.5 rounded">NVMe</span>
+                    </div>
+                    <p className="text-[12px] text-[#60646c] mt-2 leading-relaxed">
+                      Flushed files are written with sparse indexes and Murmur3 Bloom Filters, preventing unnecessary disk I/O on misses.
+                    </p>
                   </div>
                 </div>
               </div>
             </div>
           )}
 
-          {/* TAB 2: LIVE COMMAND MONITOR */}
+          {/* TAB 3: DATA BROWSER / KEY EXPLORER */}
+          {activeTab === "browser" && (
+            <div className="space-y-6">
+              
+              {/* Insert / Update Key Form */}
+              <form
+                onSubmit={handleAddKey}
+                className="bg-[#ffffff] rounded-[20px] border border-[#e0e1e6] p-5 shadow-sm flex flex-col sm:flex-row items-center gap-3"
+              >
+                <input
+                  type="text"
+                  placeholder="Key (e.g. user:profile:102)"
+                  value={newKey}
+                  onChange={(e) => setNewKey(e.target.value)}
+                  className="flex-1 bg-[#eaeaea]/60 border border-[#e0e1e6] px-3.5 py-2 rounded-[6px] font-mono text-[13px] text-[#1b1b1b] focus:outline-none focus:border-[#1b1b1b]"
+                  required
+                />
+                <input
+                  type="text"
+                  placeholder="Value string or JSON payload"
+                  value={newVal}
+                  onChange={(e) => setNewVal(e.target.value)}
+                  className="flex-1 bg-[#eaeaea]/60 border border-[#e0e1e6] px-3.5 py-2 rounded-[6px] font-mono text-[13px] text-[#1b1b1b] focus:outline-none focus:border-[#1b1b1b]"
+                  required
+                />
+                <input
+                  type="number"
+                  placeholder="TTL (sec)"
+                  value={newTTL}
+                  onChange={(e) => setNewTTL(e.target.value)}
+                  className="w-28 bg-[#eaeaea]/60 border border-[#e0e1e6] px-3.5 py-2 rounded-[6px] font-mono text-[13px] text-[#1b1b1b] focus:outline-none focus:border-[#1b1b1b]"
+                />
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-[6px] bg-[#1b1b1b] text-white font-medium text-[13px] hover:opacity-90 shadow-sm shrink-0"
+                >
+                  Set Key
+                </button>
+              </form>
+
+              {/* Stored Keys Table */}
+              <div className="bg-[#ffffff] rounded-[20px] border border-[#e0e1e6] shadow-sm overflow-hidden">
+                <div className="p-4 border-b border-[#e0e1e6] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[13px] font-semibold text-[#1b1b1b]">
+                      Stored Keys ({filteredKeys.length})
+                    </span>
+                    <div className="flex items-center gap-1 ml-3">
+                      {(["ALL", "memtable", "sstable"] as const).map((tier) => (
+                        <button
+                          key={tier}
+                          onClick={() => setKeyFilterTier(tier)}
+                          className={`px-2 py-0.5 rounded text-[11px] font-medium border ${
+                            keyFilterTier === tier
+                              ? "bg-[#1b1b1b] text-white border-[#1b1b1b]"
+                              : "bg-[#eaeaea] text-[#60646c] border-[#e0e1e6]"
+                          }`}
+                        >
+                          {tier === "ALL" ? "All Tiers" : tier === "memtable" ? "RAM (MemTable)" : "Disk (SSTable)"}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <input
+                    type="text"
+                    placeholder="Filter keys..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="bg-[#eaeaea]/60 border border-[#e0e1e6] px-3 py-1 rounded-[6px] text-[12px] font-mono text-[#1b1b1b] w-48 focus:outline-none focus:border-[#1b1b1b]"
+                  />
+                </div>
+
+                <div className="divide-y divide-[#e0e1e6]">
+                  {filteredKeys.length === 0 ? (
+                    <div className="p-12 text-center text-[#7c7c7c] text-[13px]">
+                      No keys found matching query. Add keys above or send commands from an SDK!
+                    </div>
+                  ) : (
+                    filteredKeys.map((k) => (
+                      <div
+                        key={k.key}
+                        className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-[#eaeaea]/30 transition-colors"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <span
+                            className={`text-[10px] font-mono uppercase px-2 py-0.5 rounded-[4px] font-semibold ${
+                              k.tier === "memtable"
+                                ? "bg-[#19a05f]/15 text-[#19a05f] border border-[#19a05f]/30"
+                                : "bg-[#0d7f8c]/15 text-[#0d7f8c] border border-[#0d7f8c]/30"
+                            }`}
+                          >
+                            {k.tier === "memtable" ? "RAM" : "SSTABLE"}
+                          </span>
+                          <span className="font-mono text-[13px] font-medium text-[#1b1b1b]">
+                            {k.key}
+                          </span>
+                          <span className="text-[12px] font-mono text-[#60646c] truncate max-w-md">
+                            {k.value}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-4 text-[12px] font-mono shrink-0">
+                          <span className="text-[#7c7c7c]">
+                            {k.ttl === -1 ? "PERSISTENT" : `TTL: ${k.ttl}s`}
+                          </span>
+                          <button
+                            onClick={() => handleDeleteKey(k.key)}
+                            className="text-[#ef4444] hover:underline"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 4: LIVE MONITOR STREAM */}
           {activeTab === "monitor" && (
-            <div className="p-6 flex-1 flex flex-col">
-              <div className="flex items-center justify-between pb-4 border-b border-[#1f1f2e] mb-4">
+            <div className="bg-[#ffffff] rounded-[20px] border border-[#e0e1e6] p-6 shadow-sm flex flex-col h-[580px]">
+              <div className="flex flex-wrap items-center justify-between pb-4 border-b border-[#e0e1e6] gap-3">
                 <div className="flex items-center gap-3">
-                  <div className="w-2.5 h-2.5 rounded-full bg-[#10b981] animate-pulse" />
-                  <span className="font-mono text-[12px] text-white">
-                    LIVE OPERATION FEED ({events.length} EVENTS)
+                  <div className="w-2.5 h-2.5 rounded-full bg-[#19a05f] animate-pulse" />
+                  <span className="text-[14px] font-semibold text-[#1b1b1b]">
+                    Live Telemetry Stream ({filteredEvents.length} events)
                   </span>
                 </div>
+
                 <div className="flex items-center gap-2">
+                  <select
+                    value={filterCmd}
+                    onChange={(e) => setFilterCmd(e.target.value)}
+                    className="bg-[#eaeaea] border border-[#e0e1e6] rounded-[6px] px-2.5 py-1 text-[12px] font-mono text-[#1b1b1b]"
+                  >
+                    <option value="ALL">All Commands</option>
+                    <option value="PUT">PUT</option>
+                    <option value="GET">GET</option>
+                    <option value="PUTEX">PUTEX</option>
+                    <option value="DEL">DEL</option>
+                    <option value="TTL">TTL</option>
+                  </select>
                   <button
                     onClick={() => setIsMonitorPaused((p) => !p)}
-                    className="px-3 py-1 rounded-[5px] bg-[#14141e] border border-[#27273a] text-[11px] font-mono text-[#9ca3af] hover:text-white"
+                    className="px-3 py-1 rounded-[6px] border border-[#e0e1e6] bg-[#eaeaea] text-[12px] font-medium text-[#1b1b1b] hover:bg-[#e0e1e6]"
                   >
-                    {isMonitorPaused ? "▶ Resume Feed" : "⏸ Pause Feed"}
+                    {isMonitorPaused ? "▶ Resume" : "⏸ Pause"}
                   </button>
                   <button
                     onClick={() => setEvents([])}
-                    className="px-3 py-1 rounded-[5px] bg-[#14141e] border border-[#27273a] text-[11px] font-mono text-[#9ca3af] hover:text-white"
+                    className="px-3 py-1 rounded-[6px] border border-[#e0e1e6] bg-[#eaeaea] text-[12px] font-medium text-[#1b1b1b] hover:bg-[#e0e1e6]"
                   >
-                    Clear Stream
+                    Clear
                   </button>
                 </div>
               </div>
 
-              {/* Virtualized Terminal Feed */}
-              <div className="flex-1 bg-[#050508] border border-[#1f1f2e] rounded-[10px] p-4 font-mono text-[12px] overflow-y-auto space-y-2 min-h-[420px]">
-                {events.length === 0 ? (
-                  <div className="text-center py-16 text-[#6b7280]">
-                    Listening for database commands... Connect a client to see live operations!
+              {/* Streaming Terminal Window */}
+              <div className="flex-1 bg-[#1b1b1b] rounded-[12px] p-4 font-mono text-[12px] overflow-y-auto mt-4 space-y-2 text-[#eaeaea]">
+                {filteredEvents.length === 0 ? (
+                  <div className="text-center py-20 text-[#7c7c7c]">
+                    Waiting for real-time operations... Connect an SDK driver or web terminal to view events!
                   </div>
                 ) : (
-                  events.map((evt, idx) => (
+                  filteredEvents.map((evt, idx) => (
                     <div
                       key={idx}
-                      className="flex flex-wrap items-center gap-3 py-1 border-b border-[#14141e] text-[12px]"
+                      className="flex flex-wrap items-center gap-3 py-1 border-b border-[#2d2d38] text-[12px]"
                     >
-                      <span className="text-[#6b7280]">
+                      <span className="text-[#7c7c7c]">
                         {new Date(evt.timestamp).toLocaleTimeString()}
                       </span>
-                      <span className="text-[#38bdf8] font-semibold">{evt.command}</span>
+                      <span className="text-[#00f2e6] font-semibold">{evt.command}</span>
                       <span className="text-white truncate max-w-xs">{evt.key || "-"}</span>
-                      <span className="ml-auto text-[#10b981] font-semibold">{evt.latency_us} µs</span>
+                      <span className="ml-auto text-[#8dc63f] font-semibold">{evt.latency_us} µs</span>
                       <span
                         className={`text-[10px] px-1.5 py-0.5 rounded ${
                           evt.storage_tier === "memtable"
-                            ? "bg-[#10b981]/20 text-[#10b981]"
-                            : "bg-[#a855f7]/20 text-[#a855f7]"
+                            ? "bg-[#19a05f]/20 text-[#8dc63f]"
+                            : "bg-[#00b9f1]/20 text-[#00b9f1]"
                         }`}
                       >
                         {evt.storage_tier || "RAM"}
@@ -674,107 +1196,31 @@ print(s.recv(1024).decode()) # OK`}</code>
             </div>
           )}
 
-          {/* TAB 3: DATA BROWSER */}
-          {activeTab === "browser" && (
-            <div className="p-6 space-y-6">
-              {/* Insert Key Form */}
-              <form
-                onSubmit={handleAddKey}
-                className="bg-[#0e0e16] border border-[#1f1f2e] rounded-[12px] p-4 flex flex-col md:flex-row items-center gap-3"
-              >
-                <input
-                  type="text"
-                  placeholder="Key (e.g. users:103:profile)"
-                  value={newKey}
-                  onChange={(e) => setNewKey(e.target.value)}
-                  className="flex-1 bg-[#050508] border border-[#27273a] px-3 py-2 rounded-[6px] font-mono text-[12px] text-white"
-                />
-                <input
-                  type="text"
-                  placeholder="Value string or JSON"
-                  value={newVal}
-                  onChange={(e) => setNewVal(e.target.value)}
-                  className="flex-1 bg-[#050508] border border-[#27273a] px-3 py-2 rounded-[6px] font-mono text-[12px] text-white"
-                />
-                <input
-                  type="number"
-                  placeholder="TTL (sec, opt)"
-                  value={newTTL}
-                  onChange={(e) => setNewTTL(e.target.value)}
-                  className="w-24 bg-[#050508] border border-[#27273a] px-3 py-2 rounded-[6px] font-mono text-[12px] text-white"
-                />
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-white text-black font-mono text-[12px] font-semibold rounded-[6px] hover:bg-neutral-200 transition-colors"
-                >
-                  Set Key
-                </button>
-              </form>
-
-              {/* Keys Table */}
-              <div className="bg-[#0e0e16] border border-[#1f1f2e] rounded-[12px] overflow-hidden">
-                <div className="p-4 border-b border-[#1f1f2e] flex items-center justify-between">
-                  <span className="font-mono text-[12px] uppercase text-[#6b7280]">
-                    Stored Keys ({keys.length})
-                  </span>
-                  <input
-                    type="text"
-                    placeholder="Search keys..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="bg-[#050508] border border-[#27273a] px-3 py-1 rounded-[6px] font-mono text-[11px] text-white w-48"
-                  />
-                </div>
-
-                <div className="divide-y divide-[#1f1f2e]">
-                  {keys.map((k) => (
-                    <div
-                      key={k.key}
-                      className="p-3 flex items-center justify-between hover:bg-[#12121c] font-mono text-[12px]"
-                    >
-                      <div className="flex items-center gap-3">
-                        <span
-                          className={`text-[9px] px-1.5 py-0.5 rounded uppercase font-semibold ${
-                            k.tier === "memtable"
-                              ? "bg-[#10b981]/20 text-[#10b981]"
-                              : "bg-[#a855f7]/20 text-[#a855f7]"
-                          }`}
-                        >
-                          {k.tier}
-                        </span>
-                        <span className="text-[#38bdf8] font-medium">{k.key}</span>
-                        <span className="text-[#9ca3af] truncate max-w-md">{k.value}</span>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <span className="text-[11px] text-[#6b7280]">
-                          TTL: {k.ttl === -1 ? "Persistent" : `${k.ttl}s`}
-                        </span>
-                        <button
-                          onClick={() => handleDeleteKey(k.key)}
-                          className="text-[#ef4444] hover:underline text-[11px]"
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* TAB 4: WEB CLI TERMINAL */}
+          {/* TAB 5: INTERACTIVE WEB CLI TERMINAL */}
           {activeTab === "cli" && (
-            <div className="p-6 flex-1 flex flex-col">
-              <div className="flex-1 bg-[#050508] border border-[#1f1f2e] rounded-[10px] p-4 font-mono text-[13px] flex flex-col justify-between min-h-[460px]">
-                <div className="space-y-3 overflow-y-auto mb-4">
+            <div className="bg-[#ffffff] rounded-[20px] border border-[#e0e1e6] p-6 shadow-sm flex flex-col h-[580px]">
+              <div className="flex items-center justify-between pb-3 border-b border-[#e0e1e6]">
+                <span className="text-[14px] font-semibold text-[#1b1b1b]">
+                  Interactive Query Shell (Sider REPL)
+                </span>
+                <span className="text-[12px] font-mono text-[#60646c]">
+                  Connected to {selectedDb.name}
+                </span>
+              </div>
+
+              {/* Shell Display */}
+              <div className="flex-1 bg-[#1b1b1b] rounded-[12px] p-4 font-mono text-[13px] flex flex-col justify-between mt-4 overflow-hidden text-[#eaeaea]">
+                <div className="space-y-3 overflow-y-auto mb-3 pr-2">
                   {cliHistory.map((item, idx) => (
                     <div key={idx} className="space-y-1">
-                      <div className="flex items-center gap-2 text-white">
-                        <span className="text-[#10b981]">&gt;</span>
-                        <span>{item.cmd}</span>
+                      <div className="flex items-center justify-between text-white">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[#00f2e6]">&gt;</span>
+                          <span className="font-semibold">{item.cmd}</span>
+                        </div>
+                        <span className="text-[10px] text-[#7c7c7c]">{item.time}</span>
                       </div>
-                      <div className="text-[#9ca3af] whitespace-pre-wrap pl-4 font-mono text-[12px]">
+                      <div className="text-[#b0b3ba] whitespace-pre-wrap pl-4 text-[12px] font-mono">
                         {item.resp}
                       </div>
                     </div>
@@ -782,103 +1228,85 @@ print(s.recv(1024).decode()) # OK`}</code>
                   <div ref={cliBottomRef} />
                 </div>
 
-                <form onSubmit={handleCliSubmit} className="flex items-center gap-2 pt-2 border-t border-[#1f1f2e]">
-                  <span className="text-[#10b981] font-bold">&gt;</span>
+                {/* Input prompt */}
+                <form
+                  onSubmit={handleCliSubmit}
+                  className="flex items-center gap-2 pt-3 border-t border-[#2d2d38]"
+                >
+                  <span className="text-[#00f2e6] font-bold">&gt;</span>
                   <input
                     type="text"
                     value={cliInput}
                     onChange={(e) => setCliInput(e.target.value)}
-                    placeholder="Enter Sider command (e.g. PUT key val, GET key, INFO)..."
+                    placeholder="Enter command (e.g. PUT user:1 'John', GET user:1, INFO, TTL user:1)..."
                     className="flex-1 bg-transparent text-white focus:outline-none font-mono text-[13px]"
                     autoFocus
                   />
-                  <button type="submit" className="text-[11px] text-[#6b7280] hover:text-white font-mono">
-                    Run &crarr;
+                  <button
+                    type="submit"
+                    className="text-[11px] font-mono text-[#7c7c7c] hover:text-white px-2 py-1"
+                  >
+                    Execute &crarr;
                   </button>
                 </form>
-              </div>
-            </div>
-          )}
-
-          {/* TAB 5: LSM METRICS & STORAGE */}
-          {activeTab === "metrics" && (
-            <div className="p-6 max-w-5xl space-y-6 font-mono">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="bg-[#0e0e16] border border-[#1f1f2e] rounded-[10px] p-4">
-                  <span className="text-[10px] text-[#6b7280] uppercase">MemTable RAM Keys</span>
-                  <div className="text-[24px] font-bold text-white mt-1">
-                    {stats.memtable_entries || 0}
-                  </div>
-                  <span className="text-[11px] text-[#10b981]">Fast $O(\log N)$ In-Memory</span>
-                </div>
-                <div className="bg-[#0e0e16] border border-[#1f1f2e] rounded-[10px] p-4">
-                  <span className="text-[10px] text-[#6b7280] uppercase">Immutable SSTables on Disk</span>
-                  <div className="text-[24px] font-bold text-white mt-1">
-                    {stats.sstables_count || 0} .db files
-                  </div>
-                  <span className="text-[11px] text-[#a855f7]">Persistent Storage</span>
-                </div>
-                <div className="bg-[#0e0e16] border border-[#1f1f2e] rounded-[10px] p-4">
-                  <span className="text-[10px] text-[#6b7280] uppercase">Total Operations Executed</span>
-                  <div className="text-[24px] font-bold text-white mt-1">
-                    {stats.total_ops || 0}
-                  </div>
-                  <span className="text-[11px] text-[#38bdf8]">Sub-millisecond writes</span>
-                </div>
               </div>
             </div>
           )}
         </main>
       </div>
 
-      {/* New Database Modal */}
+      {/* NEW DATABASE MODAL */}
       {showNewDbModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-md bg-[#0e0e16] border border-[#27273a] rounded-[14px] p-6 shadow-2xl">
-            <h2 className="text-[18px] font-semibold text-white font-mono mb-4">
-              Provision New Sider Database
+        <div className="fixed inset-0 z-50 bg-[#1b1b1b]/40 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-[#ffffff] rounded-[20px] border border-[#e0e1e6] p-6 shadow-2xl">
+            <h2 className="text-[20px] font-semibold text-[#1b1b1b] mb-1" style={{ letterSpacing: "-0.5px" }}>
+              Provision New Database
             </h2>
+            <p className="text-[13px] text-[#60646c] mb-5">
+              Spawns an isolated Sider LSM-Tree process with dedicated TCP/HTTP ports and credentials.
+            </p>
             <form onSubmit={handleCreateDatabase} className="space-y-4">
               <div>
-                <label className="block text-[11px] font-mono text-[#9ca3af] uppercase mb-1">
+                <label className="block text-[12px] font-semibold text-[#7c7c7c] uppercase mb-1">
                   Database Name
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. production-cache"
+                  placeholder="e.g. redis-cache-production"
                   value={newDbName}
                   onChange={(e) => setNewDbName(e.target.value)}
-                  className="w-full bg-[#050508] border border-[#27273a] px-3 py-2 rounded-[6px] font-mono text-[13px] text-white"
+                  className="w-full bg-[#eaeaea]/60 border border-[#e0e1e6] px-3.5 py-2.5 rounded-[6px] text-[13px] font-mono text-[#1b1b1b] focus:outline-none focus:border-[#1b1b1b]"
                   required
                 />
               </div>
+
               <div>
-                <label className="block text-[11px] font-mono text-[#9ca3af] uppercase mb-1">
-                  Host & Engine Hardware
+                <label className="block text-[12px] font-semibold text-[#7c7c7c] uppercase mb-1">
+                  Target Host & Node Hardware
                 </label>
                 <select
                   value={newDbRegion}
                   onChange={(e) => setNewDbRegion(e.target.value)}
-                  className="w-full bg-[#050508] border border-[#27273a] px-3 py-2 rounded-[6px] font-mono text-[13px] text-white"
+                  className="w-full bg-[#eaeaea]/60 border border-[#e0e1e6] px-3 py-2 rounded-[6px] text-[13px] text-[#1b1b1b] focus:outline-none"
                 >
                   <option value="Home Desktop (i5-9600 • Arch Linux)">
-                    Home Desktop (i5-9600 • Arch Linux)
+                    Home Desktop (Intel i5-9600 • Arch Linux)
                   </option>
-                  <option value="Local Developer Sandbox">Local Developer Sandbox</option>
+                  <option value="Local Sandbox Instance">Local Developer Sandbox</option>
                 </select>
               </div>
 
-              <div className="flex items-center justify-end gap-3 pt-4 border-t border-[#1f1f2e]">
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-[#e0e1e6]">
                 <button
                   type="button"
                   onClick={() => setShowNewDbModal(false)}
-                  className="px-4 py-2 font-mono text-[12px] text-[#9ca3af] hover:text-white"
+                  className="px-4 py-2 rounded-[6px] text-[13px] text-[#60646c] hover:text-[#1b1b1b]"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-[6px] bg-white text-black font-mono text-[12px] font-semibold hover:bg-neutral-200 transition-colors"
+                  className="px-5 py-2 rounded-[6px] bg-[#1b1b1b] text-white text-[13px] font-medium hover:opacity-90 transition-opacity shadow-[0px_4px_20px_0px_rgba(0,0,0,0.15)]"
                 >
                   Provision Database
                 </button>
