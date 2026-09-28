@@ -4,8 +4,7 @@ import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { SiderLogo } from "../components/SiderLogo";
-import { ThreeHeroCanvas } from "../components/ThreeHeroCanvas";
-import { Lsm3DReactor } from "../components/Lsm3DReactor";
+import { HorizonLockCanvas } from "../components/HorizonLockCanvas";
 import { useUser, UserButton } from "@clerk/nextjs";
 
 export default function SiderCloudLanding() {
@@ -154,9 +153,9 @@ export default function SiderCloudLanding() {
 
       {/* 3. HERO COCKPIT STAGE */}
       <section className="w-full max-w-[1200px] mx-auto px-4 sm:px-6 pt-16 pb-20 relative">
-        {/* Three.js 3D Quantum Gyroscope & Floating Neon Particle Field */}
-        <div className="absolute inset-0 w-full h-[620px] overflow-hidden pointer-events-auto -z-10 opacity-75">
-          <ThreeHeroCanvas />
+        {/* Horizon Lock 3D Infinite Perspective Grid with Gyroscopic Bank Stabilization */}
+        <div className="absolute inset-0 w-full h-[680px] overflow-hidden pointer-events-none -z-10 opacity-80">
+          <HorizonLockCanvas />
         </div>
         {/* Ambient Radial Violet Glow */}
         <div className="absolute top-10 left-1/2 -translate-x-1/2 w-[600px] h-[350px] bg-gradient-to-b from-[#405bff]/25 via-[#7084ff]/10 to-transparent blur-[120px] pointer-events-none -z-10" />
@@ -433,21 +432,7 @@ export default function SiderCloudLanding() {
         </div>
       </section>
 
-      {/* 5.5 INTERACTIVE 3D LSM-TREE REACTOR */}
-      <section id="architecture" className="w-full max-w-[1200px] mx-auto px-4 sm:px-6 py-12 scroll-mt-24">
-        <div className="text-center mb-8">
-          <span className="text-[11px] font-semibold text-[#7084ff] uppercase tracking-wider font-mono">
-            3D QUANTUM ARCHITECTURE
-          </span>
-          <h2 className="text-[30px] sm:text-[38px] font-medium text-white tracking-tight mt-1">
-            Interactive LSM-Tree Engine Reactor
-          </h2>
-          <p className="text-[14px] text-[#a7a9ac] max-w-xl mx-auto">
-            Manipulate the 3D storage tiers in real-time. Witness in-memory SkipList lookups, WAL append streams, and persistent NVMe ext4 SSTables.
-          </p>
-        </div>
-        <Lsm3DReactor />
-      </section>
+
 
       {/* 6. CODE SNIPPET INTEGRATION (Carbon Panel with Dracula Syntax) */}
       <section id="quickstart" className="w-full max-w-[1200px] mx-auto px-4 sm:px-6 py-14 border-t border-[#414042]/50">

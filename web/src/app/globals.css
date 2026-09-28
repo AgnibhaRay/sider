@@ -90,18 +90,44 @@
 
 html {
   scroll-behavior: smooth;
-  background-color: var(--color-putty);
-  color: var(--color-ink);
+  background-color: #0e0e0e;
+  color: #ffffff;
 }
 
 body {
   margin: 0;
   padding: 0;
-  background-color: var(--color-putty);
-  color: var(--color-ink);
+  background-color: #0e0e0e;
+  color: #ffffff;
   font-family: var(--font-helvetica-now);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* Custom Sleek Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #0e0e0e;
+}
+::-webkit-scrollbar-thumb {
+  background: #2c2c2c;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #405bff;
+}
+
+/* Sleek Horizon Tilt Transition */
+.horizon-card {
+  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.3s ease, box-shadow 0.3s ease;
+}
+.horizon-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(64, 91, 255, 0.6);
+  box-shadow: 0 12px 30px -10px rgba(64, 91, 255, 0.25);
 }
 
 /* Typography Utility Classes */

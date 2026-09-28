@@ -3,7 +3,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { SiderLogo } from "@/components/SiderLogo";
-import { ThreeDarkCanvas } from "@/components/ThreeDarkCanvas";
 import { useUser, UserButton } from "@clerk/nextjs";
 
 interface DatabaseInstance {
@@ -96,13 +95,15 @@ export default function SiderConsolePage() {
   const [filterCmd, setFilterCmd] = useState<string>("ALL");
   const monitorEndRef = useRef<HTMLDivElement>(null);
 
-  // Key-Value Explorer State
+  // Key-Value Explorer State & Pagination
   const [keys, setKeys] = useState<KeyRecord[]>([]);
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [newKey, setNewKey] = useState<string>("");
   const [newVal, setNewVal] = useState<string>("");
   const [newTTL, setNewTTL] = useState<string>("");
   const [keyFilterTier, setKeyFilterTier] = useState<"ALL" | "memtable" | "sstable">("ALL");
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(10);
 
   // CLI State
   const [cliInput, setCliInput] = useState<string>("");
@@ -483,12 +484,17 @@ export default function SiderConsolePage() {
     }
   };
 
-  // Filtered keys
+  // Filtered keys & Pagination
   const filteredKeys = keys.filter((k) => {
     const matchesSearch = k.key.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesTier = keyFilterTier === "ALL" || k.tier === keyFilterTier;
     return matchesSearch && matchesTier;
   });
+
+  const totalPages = Math.max(1, Math.ceil(filteredKeys.length / pageSize));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const startIndex = (safeCurrentPage - 1) * pageSize;
+  const paginatedKeys = filteredKeys.slice(startIndex, startIndex + pageSize);
 
   // Filtered events
   const filteredEvents = events.filter((ev) => {
@@ -694,10 +700,7 @@ printf "AUTH ${token}\\nPUT alpha:ping pong\\nGET alpha:ping\\nINFO\\n" | nc ${h
       className="min-h-screen text-[#ffffff] flex flex-col font-sans select-none antialiased relative overflow-x-hidden"
       style={{ backgroundColor: "#0e0e0e", fontFamily: "var(--font-inter), sans-serif" }}
     >
-      {/* Ambient 3D Neon Constellation Grid */}
-      <div className="fixed inset-0 w-full h-full pointer-events-none opacity-30 z-0">
-        <ThreeDarkCanvas />
-      </div>
+
       {/* 1. TOP SIGNAL STRIP (VIOLET GLOW ACCENT) */}
       <div
         className="w-full h-10 px-4 text-white text-[12px] font-medium flex items-center justify-center gap-2 border-b border-[#414042]/50 z-50 sticky top-0"
@@ -1170,13 +1173,13 @@ printf "AUTH ${token}\\nPUT alpha:ping pong\\nGET alpha:ping\\nINFO\\n" | nc ${h
                       type="text"
                       placeholder="Filter keys..."
                       value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
+                      onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
                       className="w-full bg-[#0e0e0e] border border-[#58595b] px-3 py-1.5 rounded-[10px] text-[12px] font-mono text-white focus:outline-none focus:border-[#405bff]"
                     />
                   </div>
                   <div className="flex items-center gap-2">
                     <button
-                      onClick={() => setKeyFilterTier("ALL")}
+                      onClick={() => { setKeyFilterTier("ALL"); setCurrentPage(1); }}
                       className={`px-3 py-1 rounded-[30px] text-[11px] font-mono cursor-pointer ${
                         keyFilterTier === "ALL" ? "bg-[#405bff] text-white" : "bg-[#0e0e0e] text-[#a7a9ac] border border-[#414042]"
                       }`}
@@ -1184,7 +1187,7 @@ printf "AUTH ${token}\\nPUT alpha:ping pong\\nGET alpha:ping\\nINFO\\n" | nc ${h
                       ALL
                     </button>
                     <button
-                      onClick={() => setKeyFilterTier("memtable")}
+                      onClick={() => { setKeyFilterTier("memtable"); setCurrentPage(1); }}
                       className={`px-3 py-1 rounded-[30px] text-[11px] font-mono cursor-pointer ${
                         keyFilterTier === "memtable" ? "bg-[#405bff] text-white" : "bg-[#0e0e0e] text-[#a7a9ac] border border-[#414042]"
                       }`}
@@ -1192,7 +1195,7 @@ printf "AUTH ${token}\\nPUT alpha:ping pong\\nGET alpha:ping\\nINFO\\n" | nc ${h
                       MEMTABLE
                     </button>
                     <button
-                      onClick={() => setKeyFilterTier("sstable")}
+                      onClick={() => { setKeyFilterTier("sstable"); setCurrentPage(1); }}
                       className={`px-3 py-1 rounded-[30px] text-[11px] font-mono cursor-pointer ${
                         keyFilterTier === "sstable" ? "bg-[#405bff] text-white" : "bg-[#0e0e0e] text-[#a7a9ac] border border-[#414042]"
                       }`}
@@ -1221,7 +1224,7 @@ printf "AUTH ${token}\\nPUT alpha:ping pong\\nGET alpha:ping\\nINFO\\n" | nc ${h
                           </td>
                         </tr>
                       ) : (
-                        filteredKeys.map((k) => (
+                        paginatedKeys.map((k) => (
                           <tr key={k.key} className="hover:bg-[#0e0e0e]/50">
                             <td className="py-2.5 font-semibold text-white">{k.key}</td>
                             <td className="py-2.5 text-[#d1d3d4] max-w-xs truncate">{k.value}</td>
@@ -1244,6 +1247,62 @@ printf "AUTH ${token}\\nPUT alpha:ping pong\\nGET alpha:ping\\nINFO\\n" | nc ${h
                       )}
                     </tbody>
                   </table>
+                </div>
+
+                {/* Pagination Controls */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mt-5 pt-4 border-t border-[#414042]">
+                  <div className="flex items-center gap-3 text-[12px] text-[#a7a9ac] font-mono">
+                    <span>
+                      Showing {filteredKeys.length === 0 ? 0 : startIndex + 1}–{Math.min(startIndex + pageSize, filteredKeys.length)} of {filteredKeys.length} keys
+                    </span>
+                    <div className="flex items-center gap-1.5 ml-2">
+                      <span className="text-[#6d6e71]">Rows:</span>
+                      {([10, 25, 50] as const).map((sz) => (
+                        <button
+                          key={sz}
+                          type="button"
+                          onClick={() => {
+                            setPageSize(sz);
+                            setCurrentPage(1);
+                          }}
+                          className={`px-2 py-0.5 rounded-[4px] text-[11px] font-mono cursor-pointer transition-colors ${
+                            pageSize === sz
+                              ? "bg-[#405bff] text-white font-semibold"
+                              : "bg-[#0e0e0e] text-[#a7a9ac] hover:text-white border border-[#414042]"
+                          }`}
+                        >
+                          {sz}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                      disabled={safeCurrentPage <= 1}
+                      className="px-3 py-1 rounded-[30px] border border-[#414042] bg-[#0e0e0e] text-[12px] text-white disabled:opacity-30 disabled:cursor-not-allowed hover:bg-[#2c2c2c] transition-colors cursor-pointer"
+                    >
+                      &larr; Prev
+                    </button>
+
+                    <div className="flex items-center gap-1 px-2 text-[12px] font-mono text-[#d1d3d4]">
+                      <span>Page</span>
+                      <span className="font-semibold text-white">{safeCurrentPage}</span>
+                      <span className="text-[#6d6e71]">/</span>
+                      <span>{totalPages}</span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                      disabled={safeCurrentPage >= totalPages}
+                      className="px-3 py-1 rounded-[30px] border border-[#414042] bg-[#0e0e0e] text-[12px] text-white disabled:opacity-30 disabled:cursor-not-allowed hover:bg-[#2c2c2c] transition-colors cursor-pointer"
+                    >
+                      Next &rarr;
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
