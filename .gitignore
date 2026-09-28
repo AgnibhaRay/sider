@@ -7,6 +7,8 @@
 *.dll
 *.so
 *.dylib
+/sider
+/sider-cloud
 
 # Test binary, built with `go test -c`
 *.test
@@ -32,4 +34,4 @@ go.work.sum
 # .vscode/
 
 .DS_Store
-
+__pycache__/
