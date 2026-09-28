@@ -251,14 +251,14 @@ export function BuildSection() {
             <span className="w-2 h-2 rounded-full bg-[#00f0ff] animate-ping" />
             <span>CYBER-FOUNDRY QUESTS // BUILD WITH SIDER</span>
           </div>
-          <h2 className="text-[34px] sm:text-[48px] font-medium text-white tracking-tight leading-tight">
+          <h2 className="text-[28px] sm:text-[44px] font-medium text-white tracking-tight leading-tight px-2">
             Choose your mission.
             <br />
             <span className="bg-gradient-to-r from-[#405bff] via-[#7084ff] to-[#00f0ff] bg-clip-text text-transparent">
               Forge production engines in minutes.
             </span>
           </h2>
-          <p className="text-[15px] sm:text-[17px] text-[#d1d3d4] max-w-2xl mx-auto mt-3">
+          <p className="text-[13px] sm:text-[16px] text-[#d1d3d4] max-w-2xl mx-auto mt-3 px-2">
             Select a battle-tested blueprint. Copy the complete <code className="text-[#00f0ff] font-mono px-1.5 py-0.5 rounded bg-white/5 border border-white/10">build.md</code> prompt dossier directly into your AI coding agent (Claude, Cursor, Copilot, Antigravity) and launch live.
           </p>
         </div>
@@ -276,7 +276,7 @@ export function BuildSection() {
               enableTilt={true}
             >
               <div
-                className={`relative rounded-[28px] p-6 transition-all duration-300 cursor-pointer border ${
+                className={`relative rounded-[24px] sm:rounded-[28px] p-4 sm:p-6 transition-all duration-300 cursor-pointer border ${
                   isSelected
                     ? "bg-[#1f1f2e] border-[#405bff] shadow-[0_0_35px_rgba(64,91,255,0.4)]"
                     : "bg-[#191919] border-[#414042] hover:border-[#7084ff]/60 hover:bg-[#1d1d1d]"
@@ -318,15 +318,15 @@ export function BuildSection() {
                   ))}
                 </div>
 
-                {/* Actions */}
-                <div className="flex items-center gap-3 pt-4 border-t border-[#414042]/60">
+                {/* Actions (Full width friendly on mobile) */}
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 pt-4 border-t border-[#414042]/60">
                   <button
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
                       copyBuildMd(recipe);
                     }}
-                    className={`flex-1 py-2 rounded-[30px] text-[12px] font-medium font-mono transition-all flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 ${
+                    className={`w-full sm:flex-1 py-2.5 px-4 rounded-[30px] text-[12px] font-medium font-mono transition-all flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 ${
                       copiedId === recipe.id
                         ? "bg-[#19a05f] text-white shadow-[0_0_20px_rgba(25,160,95,0.6)]"
                         : "bg-[#405bff] hover:bg-[#344bd6] text-white shadow-[0_0_15px_rgba(64,91,255,0.35)]"
@@ -342,7 +342,7 @@ export function BuildSection() {
                       setSelectedRecipe(recipe);
                       setShowModal(true);
                     }}
-                    className="px-3.5 py-2 rounded-[30px] bg-[#0e0e0e] hover:bg-[#2c2c2c] border border-[#414042] text-[12px] text-[#d1d3d4] hover:text-white transition-colors cursor-pointer"
+                    className="w-full sm:w-auto px-4 py-2.5 rounded-[30px] bg-[#0e0e0e] hover:bg-[#2c2c2c] border border-[#414042] text-[12px] text-[#d1d3d4] hover:text-white transition-colors cursor-pointer text-center"
                   >
                     Inspect Dossier
                   </button>
@@ -356,7 +356,7 @@ export function BuildSection() {
       {/* Active Quest Interactive Staging Cockpit */}
       <ScrollReveal variant="swoop-up" delayMs={100} enableTilt={true}>
         <LaserBorderCard glowColor="#00f0ff">
-          <div className="p-6 sm:p-8">
+          <div className="p-4 sm:p-8">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-6 border-b border-[#414042] gap-4">
               <div>
                 <div className="flex items-center gap-2">
@@ -373,18 +373,18 @@ export function BuildSection() {
                 </p>
               </div>
 
-              <div className="flex items-center gap-3">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full sm:w-auto">
                 <button
                   type="button"
                   onClick={() => copyBuildMd(selectedRecipe)}
-                  className="px-5 py-2 rounded-[30px] bg-[#405bff] hover:bg-[#344bd6] text-white text-[13px] font-medium shadow-[0_0_20px_rgba(64,91,255,0.4)] transition-all flex items-center gap-2 cursor-pointer active:scale-95"
+                  className="w-full sm:w-auto px-5 py-2.5 rounded-[30px] bg-[#405bff] hover:bg-[#344bd6] text-white text-[13px] font-medium shadow-[0_0_20px_rgba(64,91,255,0.4)] transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-95"
                 >
                   <span>{copiedId === selectedRecipe.id ? "✓ Copied!" : "⚡ Copy build.md File"}</span>
                 </button>
 
                 <Link
                   href="/console"
-                  className="px-5 py-2 rounded-[30px] bg-[#0e0e0e] hover:bg-[#2c2c2c] border border-[#414042] text-white text-[13px] font-medium transition-colors flex items-center gap-1.5"
+                  className="w-full sm:w-auto px-5 py-2.5 rounded-[30px] bg-[#0e0e0e] hover:bg-[#2c2c2c] border border-[#414042] text-white text-[13px] font-medium transition-colors flex items-center justify-center gap-1.5"
                 >
                   <span>Open in Cockpit</span>
                   <span>&rarr;</span>
@@ -431,8 +431,8 @@ export function BuildSection() {
       {/* Full Dossier Modal */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4">
-          <div className="bg-[#191919] border border-[#405bff]/60 rounded-[28px] max-w-2xl w-full max-h-[85vh] flex flex-col shadow-[0_0_50px_rgba(64,91,255,0.4)] overflow-hidden">
-            <div className="p-6 border-b border-[#414042] flex items-center justify-between">
+          <div className="bg-[#191919] border border-[#405bff]/60 rounded-[20px] sm:rounded-[28px] max-w-2xl w-full max-h-[88vh] m-3 flex flex-col shadow-[0_0_50px_rgba(64,91,255,0.4)] overflow-hidden">
+            <div className="p-4 sm:p-6 border-b border-[#414042] flex items-center justify-between">
               <div>
                 <span className="text-[10px] font-mono text-[#00f0ff] uppercase tracking-wider">
                   COMPLETE SPECIFICATION DOSSIER
@@ -450,11 +450,11 @@ export function BuildSection() {
               </button>
             </div>
 
-            <div className="p-6 overflow-y-auto flex-1 font-mono text-[12px] text-[#d1d3d4] leading-relaxed bg-[#0e0e0e]">
+            <div className="p-4 sm:p-6 overflow-y-auto flex-1 font-mono text-[12px] text-[#d1d3d4] leading-relaxed bg-[#0e0e0e]">
               <pre className="whitespace-pre-wrap">{selectedRecipe.buildMdContent}</pre>
             </div>
 
-            <div className="p-4 border-t border-[#414042] bg-[#191919] flex items-center justify-between">
+            <div className="p-3.5 sm:p-4 border-t border-[#414042] bg-[#191919] flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
               <span className="text-[12px] text-[#a7a9ac] font-mono">
                 Paste directly into Cursor, Claude, or Copilot
               </span>

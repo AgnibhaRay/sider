@@ -26,22 +26,22 @@ export function DocsSection() {
             <span className="w-2 h-2 rounded-full bg-[#7084ff] animate-pulse" />
             <span>TECHNICAL CODEX // SYSTEM ARCHITECTURE & REFERENCE</span>
           </div>
-          <h2 className="text-[34px] sm:text-[48px] font-medium text-white tracking-tight leading-tight">
+          <h2 className="text-[28px] sm:text-[44px] font-medium text-white tracking-tight leading-tight px-2">
             Complete Technical Specification.
             <br />
             <span className="bg-gradient-to-r from-[#7084ff] via-[#3dd6f5] to-[#405bff] bg-clip-text text-transparent">
               Engine internals, wire protocol, and APIs.
             </span>
           </h2>
-          <p className="text-[15px] sm:text-[17px] text-[#d1d3d4] max-w-2xl mx-auto mt-3">
+          <p className="text-[13px] sm:text-[16px] text-[#d1d3d4] max-w-2xl mx-auto mt-3 px-2">
             Everything you need to integrate natively with Sider Cloud: raw TCP sockets, HTTP REST gateway, LSM-Tree mechanics, and cluster node specifications.
           </p>
         </div>
       </ScrollReveal>
 
       {/* Tab Navigation Pill */}
-      <div className="flex justify-center mb-8">
-        <div className="inline-flex items-center gap-1.5 p-1.5 rounded-[60px] bg-[#191919] border border-[#414042] backdrop-blur-md overflow-x-auto max-w-full">
+      <div className="flex justify-start sm:justify-center mb-8 overflow-x-auto no-scrollbar -mx-4 px-4 sm:mx-0 sm:px-0">
+        <div className="inline-flex items-center gap-1 p-1 sm:p-1.5 rounded-[60px] bg-[#191919] border border-[#414042] backdrop-blur-md shrink-0">
           {[
             { id: "protocol", label: "Wire Protocol (TCP)", icon: "⚡" },
             { id: "rest", label: "REST Gateway API", icon: "🌐" },
@@ -51,7 +51,7 @@ export function DocsSection() {
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id as DocTab)}
-              className={`px-4 sm:px-5 py-2 rounded-[30px] text-[12px] sm:text-[13px] font-medium transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer active:scale-95 ${
+              className={`px-3.5 sm:px-5 py-1.5 sm:py-2 rounded-[30px] text-[11px] sm:text-[13px] shrink-0 font-medium transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer active:scale-95 ${
                 activeTab === tab.id
                   ? "bg-[#405bff] text-white shadow-[0_0_20px_rgba(64,91,255,0.4)]"
                   : "text-[#a7a9ac] hover:text-white hover:bg-white/5"
@@ -67,7 +67,7 @@ export function DocsSection() {
       {/* Main Documentation Card */}
       <ScrollReveal variant="swoop-up" delayMs={80} enableTilt={true}>
         <LaserBorderCard glowColor="#7084ff">
-          <div className="p-6 sm:p-10 font-sans">
+          <div className="p-4 sm:p-8 font-sans">
             
             {/* TAB 1: WIRE PROTOCOL SPEC */}
             {activeTab === "protocol" && (
@@ -98,8 +98,8 @@ export function DocsSection() {
                   Sider uses a lightweight, human-readable line protocol framed with newline (<code className="text-[#00f0ff] font-mono">\r\n</code> or <code className="text-[#00f0ff] font-mono">\n</code>). All commands are processed synchronously on dedicated TCP connections with keep-alive support.
                 </p>
 
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left font-mono text-[12px]">
+                <div className="overflow-x-auto w-full -mx-4 sm:mx-0 px-4 sm:px-0">
+                  <table className="min-w-[620px] w-full text-left font-mono text-[12px]">
                     <thead>
                       <tr className="border-b border-[#414042] text-[#6d6e71]">
                         <th className="pb-3">COMMAND</th>
@@ -327,7 +327,7 @@ es.onmessage = (e) => console.log("Live Mutation:", JSON.parse(e.data));`}
                   </span>
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
                   <div className="p-4 rounded-[14px] bg-[#0e0e0e] border border-[#414042]">
                     <span className="text-[11px] text-[#6d6e71] uppercase font-semibold">CPU Architecture</span>
                     <div className="text-[16px] font-medium text-white font-mono mt-1">Intel i5-9600 (6C)</div>

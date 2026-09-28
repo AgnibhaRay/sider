@@ -23,6 +23,7 @@ export default function SiderCloudLanding() {
   const [isLaunching, setIsLaunching] = useState<boolean>(false);
   const [copiedCode, setCopiedCode] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<"python" | "node" | "go" | "tcp">("python");
+  const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
 
   useEffect(() => {
     if (isSignedIn && user?.firstName) {
@@ -62,48 +63,48 @@ export default function SiderCloudLanding() {
       className="min-h-screen text-[#ffffff] flex flex-col font-sans select-none antialiased relative overflow-x-hidden"
       style={{ backgroundColor: "#0e0e0e", fontFamily: "var(--font-inter), sans-serif" }}
     >
-      {/* 1. TOP SIGNAL STRIP (VIOLET GLOW ACCENT) */}
+      {/* 1. TOP SIGNAL STRIP (RESPONSIVE & MOBILE-FRIENDLY) */}
       <div
-        className="w-full h-10 px-4 text-white text-[12px] font-medium flex items-center justify-center gap-2 border-b border-[#414042]/50 z-50 sticky top-0"
+        className="w-full min-h-10 py-1.5 px-3 text-white text-[11px] sm:text-[12px] font-medium flex items-center justify-center gap-2 border-b border-[#414042]/50 z-50 sticky top-0 backdrop-blur-md"
         style={{
           background: "linear-gradient(179deg, rgba(64,91,255,0.25) 1.06%, rgba(112,132,255,0.06) 123.42%)"
         }}
       >
-        <span className="w-1.5 h-1.5 rounded-full bg-[#405bff] animate-pulse" />
-        <span className="font-mono text-[#7084ff] uppercase font-bold tracking-wider text-[10px] px-2 py-0.5 rounded-[30px] bg-[#405bff]/20 border border-[#405bff]/40">
-          PUBLIC ALPHA v0.2.1
+        <span className="w-1.5 h-1.5 rounded-full bg-[#405bff] animate-pulse shrink-0" />
+        <span className="font-mono text-[#7084ff] uppercase font-bold tracking-wider text-[9px] sm:text-[10px] px-2 py-0.5 rounded-[30px] bg-[#405bff]/20 border border-[#405bff]/40 shrink-0">
+          ALPHA V0.2.1
         </span>
-        <span className="text-[#d1d3d4]">
-          <strong>Sider Cloud Neon Cockpit</strong> — Zero-dependency LSM storage with native SkipList MemTable on region <code className="text-[#7084ff] font-mono">ind-tbn-1</code>.
+        <span className="text-[#d1d3d4] text-center truncate sm:overflow-visible sm:whitespace-normal">
+          <strong className="text-white">Sider Cloud</strong>: LSM SkipList on <code className="text-[#7084ff] font-mono">ind-tbn-1</code>
         </span>
         <button
           onClick={() => {
             const el = document.getElementById("console-wizard");
             el?.scrollIntoView({ behavior: "smooth" });
           }}
-          className="text-[#7084ff] hover:underline font-semibold ml-1 cursor-pointer hidden sm:inline"
+          className="text-[#7084ff] hover:underline font-semibold ml-1 cursor-pointer hidden md:inline shrink-0"
         >
-          Claim Alpha Endpoint &rarr;
+          Claim Endpoint &rarr;
         </button>
       </div>
 
-      {/* 2. FLOATING NAV PILL (LaunchDarkly signature 60px pill) */}
-      <div className="w-full max-w-[1240px] mx-auto pt-6 px-4 sticky top-12 z-40">
-        <header className="w-full bg-[#191919] border border-white/10 rounded-[60px] px-5 sm:px-6 h-14 flex items-center justify-between gap-3 shadow-[0_4px_20px_rgba(0,0,0,0.45)] backdrop-blur-md">
-          {/* Brand Left (No Wrap, Strict Horizontal Alignment) */}
-          <Link href="/" className="flex items-center gap-2.5 shrink-0 whitespace-nowrap">
-            <SiderLogo size={24} />
-            <div className="flex items-center gap-2 whitespace-nowrap">
-              <span className="text-[15px] font-medium text-white tracking-[-0.02em] whitespace-nowrap">
+      {/* 2. FLOATING NAV PILL (LaunchDarkly signature 60px pill with Mobile Drawer) */}
+      <div className="w-full max-w-[1240px] mx-auto pt-3 sm:pt-6 px-3 sm:px-4 sticky top-12 z-40">
+        <header className="w-full bg-[#191919] border border-white/10 rounded-[60px] px-3.5 sm:px-6 h-13 sm:h-14 flex items-center justify-between gap-2 sm:gap-3 shadow-[0_4px_20px_rgba(0,0,0,0.45)] backdrop-blur-md">
+          {/* Brand Left */}
+          <Link href="/" className="flex items-center gap-2 sm:gap-2.5 shrink-0 whitespace-nowrap">
+            <SiderLogo size={22} />
+            <div className="flex items-center gap-1.5 sm:gap-2 whitespace-nowrap">
+              <span className="text-[14px] sm:text-[15px] font-medium text-white tracking-[-0.02em] whitespace-nowrap">
                 Sider Cloud
               </span>
-              <span className="text-[10px] font-mono uppercase bg-[#405bff]/20 text-[#7084ff] border border-[#405bff]/40 px-2 py-0.5 rounded-[30px] whitespace-nowrap">
+              <span className="text-[9px] sm:text-[10px] font-mono uppercase bg-[#405bff]/20 text-[#7084ff] border border-[#405bff]/40 px-2 py-0.5 rounded-[30px] whitespace-nowrap hidden sm:inline-block">
                 ind-tbn-1
               </span>
             </div>
           </Link>
 
-          {/* Center Links (Clean Nav, No Collisions) */}
+          {/* Center Links (Desktop only) */}
           <nav className="hidden lg:flex items-center gap-5 text-[13px] text-[#d1d3d4] font-medium shrink-0">
             <a href="#build" className="text-[#00f0ff] hover:text-white transition-colors flex items-center gap-1.5 font-semibold whitespace-nowrap">
               <span>Build Quests</span>
@@ -125,8 +126,8 @@ export default function SiderCloudLanding() {
             </a>
           </nav>
 
-          {/* Right Actions with Dynamic Clerk Auth */}
-          <div className="flex items-center gap-2.5 sm:gap-3 shrink-0 whitespace-nowrap">
+          {/* Right Actions */}
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0 whitespace-nowrap">
             {isLoaded && isSignedIn && (
               <div className="flex items-center gap-2">
                 <span className="text-[11px] font-mono text-[#a7a9ac] hidden xl:inline max-w-[140px] truncate whitespace-nowrap">
@@ -136,16 +137,16 @@ export default function SiderCloudLanding() {
               </div>
             )}
             {isLoaded && !isSignedIn && (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 sm:gap-2">
                 <Link
                   href="/sign-in"
-                  className="px-3 py-1 text-[13px] font-medium text-[#d1d3d4] hover:text-white transition-colors whitespace-nowrap"
+                  className="px-2.5 sm:px-3 py-1 text-[12px] sm:text-[13px] font-medium text-[#d1d3d4] hover:text-white transition-colors whitespace-nowrap"
                 >
                   Sign in
                 </Link>
                 <Link
                   href="/sign-up"
-                  className="px-4 py-1.5 rounded-[30px] border border-[#414042] bg-[#191919] hover:bg-[#2c2c2c] text-[13px] font-medium text-white transition-colors hidden sm:inline-block whitespace-nowrap"
+                  className="px-3 sm:px-4 py-1.5 rounded-[30px] border border-[#414042] bg-[#191919] hover:bg-[#2c2c2c] text-[12px] sm:text-[13px] font-medium text-white transition-colors hidden md:inline-block whitespace-nowrap"
                 >
                   Sign up
                 </Link>
@@ -154,13 +155,71 @@ export default function SiderCloudLanding() {
 
             <Link
               href="/console"
-              className="px-4 sm:px-5 py-1.5 rounded-[30px] bg-[#405bff] hover:bg-[#344bd6] text-white text-[13px] font-medium transition-all shadow-[0_0_20px_rgba(64,91,255,0.4)] flex items-center gap-1.5 shrink-0 whitespace-nowrap"
+              className="px-3.5 sm:px-5 py-1.5 rounded-[30px] bg-[#405bff] hover:bg-[#344bd6] text-white text-[12px] sm:text-[13px] font-medium transition-all shadow-[0_0_20px_rgba(64,91,255,0.4)] flex items-center gap-1.5 shrink-0 whitespace-nowrap"
             >
               <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
               <span>Console</span>
             </Link>
+
+            {/* Mobile Hamburger Drawer Toggle */}
+            <button
+              type="button"
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              className="lg:hidden p-2 rounded-full bg-[#0e0e0e] border border-[#414042] text-[#d1d3d4] hover:text-white transition-colors cursor-pointer shrink-0"
+              aria-label="Toggle navigation menu"
+            >
+              {mobileMenuOpen ? (
+                <span className="text-[14px] font-bold block w-4 h-4 leading-4 text-center">✕</span>
+              ) : (
+                <span className="text-[14px] font-bold block w-4 h-4 leading-4 text-center">☰</span>
+              )}
+            </button>
           </div>
         </header>
+
+        {/* Mobile Navigation Drawer Modal */}
+        {mobileMenuOpen && (
+          <div className="lg:hidden mt-2 p-3 sm:p-4 rounded-[24px] bg-[#191919]/95 backdrop-blur-xl border border-[#405bff]/40 shadow-[0_10px_35px_rgba(0,0,0,0.8)] animate-in fade-in slide-in-from-top-2 duration-200 z-50">
+            <div className="flex flex-col gap-2 font-medium text-[13px] sm:text-[14px]">
+              <a
+                href="#build"
+                onClick={() => setMobileMenuOpen(false)}
+                className="p-3 rounded-[16px] bg-[#0e0e0e] border border-[#405bff]/30 text-[#00f0ff] flex items-center justify-between"
+              >
+                <span>⚡ Build Quests</span>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-[#00f0ff]/20">NEW</span>
+              </a>
+              <a
+                href="#docs"
+                onClick={() => setMobileMenuOpen(false)}
+                className="p-3 rounded-[16px] hover:bg-[#252525] text-white flex items-center gap-2"
+              >
+                <span>📖 Documentation</span>
+              </a>
+              <a
+                href="#console-wizard"
+                onClick={() => setMobileMenuOpen(false)}
+                className="p-3 rounded-[16px] hover:bg-[#252525] text-white flex items-center gap-2"
+              >
+                <span>🕹️ Access Cockpit</span>
+              </a>
+              <a
+                href="#specs"
+                onClick={() => setMobileMenuOpen(false)}
+                className="p-3 rounded-[16px] hover:bg-[#252525] text-white flex items-center gap-2"
+              >
+                <span>🖥️ Hardware Specs</span>
+              </a>
+              <a
+                href="#quickstart"
+                onClick={() => setMobileMenuOpen(false)}
+                className="p-3 rounded-[16px] hover:bg-[#252525] text-white flex items-center gap-2"
+              >
+                <span>📦 SDK Quickstart</span>
+              </a>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 3. HERO COCKPIT STAGE */}
@@ -204,7 +263,7 @@ export default function SiderCloudLanding() {
         <ScrollReveal variant="drop" delayMs={240} enableTilt={true}>
           <div id="console-wizard" className="mt-14 max-w-2xl mx-auto scroll-mt-28 relative">
             <LaserBorderCard glowColor="#405bff">
-              <div className="p-6 sm:p-8">
+              <div className="p-4 sm:p-8">
             
             {/* Step Indicator Header */}
             <div className="flex items-center justify-between border-b border-[#414042] pb-5 mb-6">
@@ -293,13 +352,13 @@ export default function SiderCloudLanding() {
                   </div>
                 )}
 
-                <div className="pt-4 border-t border-[#414042] flex items-center justify-between">
-                  <span className="text-[12px] text-[#6d6e71]">
+                <div className="pt-4 border-t border-[#414042] flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+                  <span className="text-[12px] text-[#6d6e71] text-center sm:text-left">
                     Step 1 of 2: Access Protocol
                   </span>
                   <button
                     onClick={() => handleStep1Complete()}
-                    className="px-6 py-2.5 rounded-[30px] bg-[#405bff] hover:bg-[#344bd6] text-white text-[13px] font-medium shadow-[0_0_20px_rgba(64,91,255,0.4)] transition-all flex items-center gap-2 cursor-pointer"
+                    className="w-full sm:w-auto px-6 py-2.5 rounded-[30px] bg-[#405bff] hover:bg-[#344bd6] text-white text-[13px] font-medium shadow-[0_0_20px_rgba(64,91,255,0.4)] transition-all flex items-center justify-center gap-2 cursor-pointer"
                   >
                     <span>Proceed to ind-tbn-1 Allocation</span>
                     <span>&rarr;</span>
@@ -352,17 +411,17 @@ export default function SiderCloudLanding() {
                   </p>
                 </div>
 
-                <div className="pt-4 border-t border-[#414042] flex items-center justify-between">
+                <div className="pt-4 border-t border-[#414042] flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-3">
                   <button
                     onClick={() => setCurrentStep(1)}
-                    className="text-[12px] text-[#a7a9ac] hover:text-white underline cursor-pointer"
+                    className="text-[12px] text-[#a7a9ac] hover:text-white underline cursor-pointer text-center sm:text-left py-1"
                   >
                     &larr; Back to Step 1
                   </button>
                   <button
                     onClick={handleLaunchConsole}
                     disabled={isLaunching}
-                    className="px-7 py-2.5 rounded-[30px] bg-[#405bff] hover:bg-[#344bd6] text-white text-[13px] font-medium shadow-[0_0_25px_rgba(64,91,255,0.5)] transition-all flex items-center gap-2 cursor-pointer"
+                    className="w-full sm:w-auto px-7 py-2.5 rounded-[30px] bg-[#405bff] hover:bg-[#344bd6] text-white text-[13px] font-medium shadow-[0_0_25px_rgba(64,91,255,0.5)] transition-all flex items-center justify-center gap-2 cursor-pointer"
                   >
                     {isLaunching ? (
                       <>
@@ -407,7 +466,7 @@ export default function SiderCloudLanding() {
           </div>
 
         {/* White panel with soft shadow */}
-        <div className="bg-[#ffffff] text-[#1b1b1b] rounded-[24px] p-6 sm:p-8 shadow-[0_10px_40px_rgba(0,0,0,0.8)] border border-white/20 relative overflow-hidden">
+        <div className="bg-[#ffffff] text-[#1b1b1b] rounded-[20px] sm:rounded-[24px] p-4 sm:p-8 shadow-[0_10px_40px_rgba(0,0,0,0.8)] border border-white/20 relative overflow-hidden">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-6 border-b border-[#e0e1e6] gap-4">
             <div className="flex items-center gap-3">
               <SiderLogo size={28} />
@@ -578,7 +637,7 @@ export default function SiderCloudLanding() {
       {/* 7. BARE-METAL CLUSTER SPECIFICATIONS CARD */}
       <section id="specs" className="w-full max-w-[1200px] mx-auto px-4 sm:px-6 py-14 border-t border-[#414042]/50">
         <ScrollReveal variant="whoop-in" delayMs={80} enableTilt={true}>
-          <div className="bg-[#191919] rounded-[30px] border border-[#414042] p-8 shadow-[0_0_30px_rgba(0,0,0,0.5)]">
+          <div className="bg-[#191919] rounded-[24px] sm:rounded-[30px] border border-[#414042] p-4 sm:p-8 shadow-[0_0_30px_rgba(0,0,0,0.5)]">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-[#414042]">
             <div>
               <span className="text-[11px] font-semibold text-[#7084ff] uppercase tracking-wider font-mono">
