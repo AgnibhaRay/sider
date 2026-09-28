@@ -21,77 +21,86 @@ export default function SignInPage() {
     setTimeout(() => {
       setIsLoading(false);
       router.push("/console");
-    }, 600);
+    }, 400);
   };
 
   return (
-    <div
-      className="min-h-screen text-[#1b1b1b] flex flex-col font-sans select-none antialiased"
-      style={{ backgroundColor: "#eaeaea", fontFamily: "var(--font-inter), sans-serif" }}
-    >
-      {/* Announcement Bar */}
+    <div className="min-h-screen bg-[#0e0e0e] text-[#ffffff] flex flex-col font-sans select-none antialiased">
+      {/* Top Signal Strip */}
       <div
-        className="w-full h-10 px-4 text-white text-[13px] font-medium flex items-center justify-center gap-2 shadow-sm"
+        className="w-full h-10 px-4 text-white text-[12px] font-medium flex items-center justify-center gap-2 border-b border-[#414042]/40"
         style={{
-          background: "linear-gradient(89.97deg, rgb(25, 160, 95) 0.02%, rgb(13, 127, 140) 123.85%)"
+          background: "linear-gradient(179deg, rgba(64,91,255,0.2) 1.06%, rgba(112,132,255,0.05) 123.42%)"
         }}
       >
-        <span>
-          <strong>Sider Cloud v2.1.0</strong>: Zero-dependency LSM storage with native SkipList MemTable.
+        <span className="w-1.5 h-1.5 rounded-full bg-[#405bff] animate-pulse" />
+        <span className="font-mono text-[#7084ff] uppercase font-semibold tracking-wider text-[11px]">
+          ind-tbn-1 ALPHA NODE
         </span>
-        <Link href="/" className="underline hover:opacity-85 font-medium ml-1">
-          Explore Architecture &rarr;
-        </Link>
+        <span className="text-[#d1d3d4]">
+          — Sub-millisecond LSM engine with native SkipList MemTable.
+        </span>
       </div>
 
-      {/* Header */}
-      <header className="w-full bg-[#ffffff] border-b border-[#e0e1e6] px-6 h-16 flex items-center justify-between">
-        <Link href="/" className="flex items-center gap-3">
-          <SiderLogo size={28} />
-          <span className="text-[15px] font-semibold text-[#1b1b1b] tracking-[-0.03em]">
-            Sider Cloud
-          </span>
-        </Link>
-        <Link
-          href="/console"
-          className="text-[13px] text-[#60646c] hover:text-[#1b1b1b] font-medium"
-        >
-          Open Console &rarr;
-        </Link>
-      </header>
+      {/* Header Pill */}
+      <div className="w-full max-w-[1100px] mx-auto pt-6 px-4">
+        <header className="w-full bg-[#191919] border border-white/10 rounded-[60px] px-6 h-14 flex items-center justify-between shadow-[0_4px_20px_rgba(0,0,0,0.45)]">
+          <Link href="/" className="flex items-center gap-3">
+            <SiderLogo size={24} />
+            <div className="flex items-center gap-2">
+              <span className="text-[15px] font-semibold text-white tracking-[-0.02em]">
+                Sider Cloud
+              </span>
+              <span className="text-[10px] font-mono uppercase bg-[#405bff]/20 text-[#7084ff] border border-[#405bff]/40 px-2 py-0.5 rounded-[30px]">
+                ALPHA
+              </span>
+            </div>
+          </Link>
+          <Link
+            href="/console"
+            className="text-[13px] text-[#a7a9ac] hover:text-white font-medium transition-colors"
+          >
+            Launch Console &rarr;
+          </Link>
+        </header>
+      </div>
 
       {/* Main Form Center */}
-      <main className="flex-1 flex items-center justify-center p-4 sm:p-6">
-        <div className="w-full max-w-md">
+      <main className="flex-1 flex items-center justify-center p-4 sm:p-6 my-8">
+        <div className="w-full max-w-md relative">
+          {/* Violet ambient glow behind card */}
+          <div className="absolute -inset-2 bg-gradient-to-b from-[#405bff]/20 to-[#7084ff]/5 rounded-[36px] blur-xl opacity-70 -z-10" />
+
           {isClerkConfigured ? (
             <div className="flex justify-center">
               <SignIn
                 routing="path"
                 path="/sign-in"
                 signUpUrl="/sign-up"
-                fallbackRedirectUrl="/console"
+                forceRedirectUrl="/console"
+                signUpForceRedirectUrl="/console"
               />
             </div>
           ) : (
-            <div className="bg-[#ffffff] rounded-[20px] border border-[#e0e1e6] p-7 sm:p-8 shadow-sm">
+            <div className="bg-[#191919] rounded-[30px] border border-[#414042] p-7 sm:p-8 shadow-[0_0_40px_rgba(64,91,255,0.25)]">
               <div className="flex items-center gap-3 mb-6">
                 <SiderLogo size={32} />
                 <div>
-                  <h1 className="text-[22px] font-semibold text-[#1b1b1b]" style={{ letterSpacing: "-0.5px" }}>
-                    Sign in to Sider Cloud
+                  <h1 className="text-[22px] font-medium text-white tracking-tight">
+                    Enter Neon Cockpit
                   </h1>
-                  <p className="text-[13px] text-[#60646c]">
-                    Manage your distributed LSM-tree database clusters
+                  <p className="text-[13px] text-[#a7a9ac]">
+                    Authenticate to manage your ind-tbn-1 clusters
                   </p>
                 </div>
               </div>
 
-              {/* OAuth Buttons */}
-              <div className="space-y-2.5 mb-5">
+              {/* GitHub Button */}
+              <div className="mb-5">
                 <button
                   type="button"
                   onClick={() => router.push("/console")}
-                  className="w-full h-10 px-4 rounded-[6px] border border-[#e0e1e6] bg-[#ffffff] hover:bg-[#eaeaea]/60 text-[13px] font-medium text-[#1b1b1b] flex items-center justify-center gap-2.5 transition-colors"
+                  className="w-full h-11 px-4 rounded-[30px] border border-[#414042] bg-[#191919] hover:bg-[#2c2c2c] text-[13px] font-medium text-white flex items-center justify-center gap-2.5 transition-colors"
                 >
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
                     <path
@@ -105,65 +114,56 @@ export default function SignInPage() {
               </div>
 
               <div className="flex items-center gap-3 my-5">
-                <div className="flex-1 h-px bg-[#e0e1e6]" />
-                <span className="text-[11px] text-[#7c7c7c] uppercase font-semibold">Or with email</span>
-                <div className="flex-1 h-px bg-[#e0e1e6]" />
+                <div className="flex-1 h-px bg-[#414042]" />
+                <span className="text-[11px] text-[#6d6e71] uppercase font-semibold">Or with developer key</span>
+                <div className="flex-1 h-px bg-[#414042]" />
               </div>
 
               <form onSubmit={handleDemoSignIn} className="space-y-4">
                 <div>
-                  <label className="block text-[12px] font-semibold text-[#7c7c7c] uppercase mb-1">
-                    Email Address
+                  <label className="block text-[12px] font-semibold text-[#a7a9ac] uppercase mb-1">
+                    Developer Identifier
                   </label>
                   <input
-                    type="email"
+                    type="text"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="developer@sider.dev"
-                    required
-                    className="w-full bg-[#eaeaea]/60 border border-[#e0e1e6] px-3.5 py-2.5 rounded-[6px] text-[13px] text-[#1b1b1b] focus:outline-none focus:border-[#1b1b1b]"
+                    placeholder="e.g. dev-cluster-alpha"
+                    className="w-full bg-[#0e0e0e] border border-[#58595b] px-3.5 py-2.5 rounded-[10px] text-[13px] font-mono text-white focus:outline-none focus:border-[#405bff]"
                   />
                 </div>
 
                 <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="text-[12px] font-semibold text-[#7c7c7c] uppercase">
-                      Password
-                    </label>
-                  </div>
+                  <label className="block text-[12px] font-semibold text-[#a7a9ac] uppercase mb-1">
+                    Node Token (Optional)
+                  </label>
                   <input
                     type="password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder="••••••••••••"
-                    required
-                    className="w-full bg-[#eaeaea]/60 border border-[#e0e1e6] px-3.5 py-2.5 rounded-[6px] text-[13px] text-[#1b1b1b] focus:outline-none focus:border-[#1b1b1b]"
+                    placeholder="sdr_live_••••••••"
+                    className="w-full bg-[#0e0e0e] border border-[#58595b] px-3.5 py-2.5 rounded-[10px] text-[13px] font-mono text-white focus:outline-none focus:border-[#405bff]"
                   />
                 </div>
 
                 <button
                   type="submit"
                   disabled={isLoading}
-                  className="w-full h-10 mt-2 rounded-[6px] bg-[#1b1b1b] text-white text-[13px] font-medium hover:opacity-90 transition-opacity shadow-[0px_4px_20px_0px_rgba(0,0,0,0.15)] flex items-center justify-center gap-2"
+                  className="w-full h-11 rounded-[30px] bg-[#405bff] hover:bg-[#344bd6] text-white text-[13px] font-medium shadow-[0_0_20px_rgba(64,91,255,0.4)] transition-all flex items-center justify-center gap-2 cursor-pointer mt-2"
                 >
                   {isLoading ? (
                     <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                   ) : (
-                    "Sign in to Console"
+                    <span>Enter Console Studio &rarr;</span>
                   )}
                 </button>
               </form>
 
-              <div className="mt-6 pt-5 border-t border-[#e0e1e6] text-center text-[13px] text-[#60646c]">
-                Don&apos;t have an account?{" "}
-                <Link href="/sign-up" className="text-[#1b1b1b] font-medium underline">
-                  Sign up
+              <div className="mt-6 text-center text-[12px] text-[#6d6e71]">
+                Need a dedicated node?{" "}
+                <Link href="/sign-up" className="text-[#7084ff] font-medium hover:underline">
+                  Claim Alpha Access &rarr;
                 </Link>
-              </div>
-
-              {/* Clerk Key Setup Note */}
-              <div className="mt-4 p-3 bg-[#eaeaea]/40 rounded-[8px] border border-[#e0e1e6] text-[11px] text-[#7c7c7c]">
-                💡 <strong>Clerk Auth Ready:</strong> Add <code>NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY</code> and <code>CLERK_SECRET_KEY</code> to your environment variables to automatically enable full Clerk identity services.
               </div>
             </div>
           )}

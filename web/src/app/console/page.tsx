@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { SiderLogo } from "@/components/SiderLogo";
+import { useUser, UserButton } from "@clerk/nextjs";
 
 interface DatabaseInstance {
   id: string;
@@ -58,7 +59,7 @@ interface InstanceStats {
 const DEFAULT_INSTANCE: DatabaseInstance = {
   id: "sdr-db-fe7b9912",
   name: "alpha-production",
-  region: "Edge Cloud Node (ap-south-1)",
+  region: "ind-tbn-1",
   tcp_port: 4100,
   http_port: 5100,
   token: "sdr_live_793855e4ec0e70901bef05344264ba98",
@@ -71,6 +72,7 @@ const DEFAULT_INSTANCE: DatabaseInstance = {
 type LanguageId = "python" | "node" | "go" | "rust" | "java" | "csharp" | "curl" | "netcat";
 
 export default function SiderConsolePage() {
+  const { user, isSignedIn, isLoaded } = useUser();
   const [supervisorHost] = useState<string>("http://100.95.206.7:8080");
   const [isDemoMode, setIsDemoMode] = useState<boolean>(false);
   const [databases, setDatabases] = useState<DatabaseInstance[]>([DEFAULT_INSTANCE]);
@@ -82,7 +84,7 @@ export default function SiderConsolePage() {
   const [supervisorOnline, setSupervisorOnline] = useState<boolean | null>(null);
   const [showNewDbModal, setShowNewDbModal] = useState<boolean>(false);
   const [newDbName, setNewDbName] = useState<string>("");
-  const [newDbRegion, setNewDbRegion] = useState<string>("Edge Cloud Node (ap-south-1)");
+  const [newDbRegion, setNewDbRegion] = useState<string>("ind-tbn-1");
 
   // Derive stable selected database instance
   const selectedDb = databases.find((d) => d.id === selectedDbId) || databases[0] || DEFAULT_INSTANCE;
@@ -118,204 +120,308 @@ export default function SiderConsolePage() {
     sstables_bytes: 0,
     wal_bytes: 51,
     total_ops: 2,
-    ops_per_sec: 0,
+    ops_per_sec: 140,
     connected_clients: 1,
-    status: "online",
+    auth_required: true,
     version: "2.1.0"
   });
 
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
-  const copyToClipboard = (text: string, id: string) => {
+  const copyToClipboard = (text: string, keyName: string) => {
     navigator.clipboard.writeText(text);
-    setCopiedKey(id);
+    setCopiedKey(keyName);
     setTimeout(() => setCopiedKey(null), 2000);
   };
 
-  // 1. Fetch Databases from Supervisor with Strict Deterministic Sorting & Selection Preservation
+  // 1. Fetch Supervisor Databases
   const fetchDatabases = async () => {
-    if (isDemoMode) return;
     try {
-      setLoading(true);
-      const res = await fetch(`${supervisorHost}/api/databases`, { method: "GET" });
+      const res = await fetch(`${supervisorHost}/api/databases`, {
+        signal: AbortSignal.timeout(3500)
+      });
       if (res.ok) {
         const data = await res.json();
-        setSupervisorOnline(true);
-        if (data.databases && data.databases.length > 0) {
-          // Sort strictly by tcp_port ascending so tiles NEVER swap places!
-          const remoteSorted: DatabaseInstance[] = [...data.databases].sort(
-            (a, b) => a.tcp_port - b.tcp_port
-          );
-
-          setDatabases((prev) => {
-            // Keep any locally created instances that haven't registered on remote yet
-            const merged = [...remoteSorted];
-            for (const item of prev) {
-              if (!merged.some((m) => m.id === item.id)) {
-                merged.push(item);
-              }
-            }
-            return merged.sort((a, b) => a.tcp_port - b.tcp_port);
+        if (data && Array.isArray(data.databases) && data.databases.length > 0) {
+          const sorted = [...data.databases].sort((a, b) => a.tcp_port - b.tcp_port);
+          setDatabases(sorted);
+          setSelectedDbId((prev) => {
+            const exists = sorted.some((d) => d.id === prev);
+            return exists ? prev : sorted[0].id;
           });
-
-          // PRESERVE SELECTED DB ID - DO NOT SWITCH TO ALPHA-PRODUCTION
-          setSelectedDbId((currentId) => {
-            if (remoteSorted.some((d) => d.id === currentId)) {
-              return currentId;
-            }
-            return currentId || remoteSorted[0]?.id;
-          });
+          setSupervisorOnline(true);
+          return;
         }
-      } else {
-        setSupervisorOnline(false);
       }
+      setSupervisorOnline(false);
     } catch {
       setSupervisorOnline(false);
-    } finally {
-      setLoading(false);
     }
   };
 
-  useEffect(() => {
-    fetchDatabases();
-    const interval = setInterval(fetchDatabases, 6000);
-    return () => clearInterval(interval);
-  }, [supervisorHost, isDemoMode]);
-
-  // 2. Fetch Keys for Active Instance
-  const fetchKeys = async () => {
-    if (isDemoMode) {
-      setKeys([
-        { key: "user:1001", value: '{"name": "Agnibha", "role": "admin"}', ttl: -1, tier: "memtable" },
-        { key: "users:session:9a7f", value: "active_user_sess_xyz", ttl: 245, tier: "memtable" },
-        { key: "cache:products:featured", value: '["prod_1", "prod_2", "prod_9"]', ttl: 1180, tier: "sstable" },
-        { key: "analytics:pageviews:home", value: "19402", ttl: -1, tier: "sstable" },
-        { key: "config:rate_limit:burst", value: "500", ttl: -1, tier: "memtable" }
-      ]);
-      return;
-    }
-
-    try {
-      const targetUrl = `${selectedDb.http_endpoint}/api/keys?q=${encodeURIComponent(searchQuery)}`;
-      const res = await fetch(targetUrl);
-      if (res.ok) {
-        const data = await res.json();
-        setKeys(data.keys || []);
-      }
-    } catch {
-      // Offline fallback
-    }
-  };
-
-  // 3. Fetch Stats for Active Instance
+  // 2. Fetch Instance Real-Time Telemetry Stats
   const fetchStats = async () => {
     if (isDemoMode) {
       setStats((prev) => ({
         ...prev,
-        ops_per_sec: Math.floor(Math.random() * 220) + 120,
-        total_ops: (prev.total_ops || 1000) + 3
+        ops_per_sec: Math.floor(180 + Math.random() * 80),
+        total_ops: (prev.total_ops || 0) + 1,
+        memtable_bytes: 58 + Math.floor(Math.random() * 20)
       }));
       return;
     }
+
     try {
-      const res = await fetch(`${selectedDb.http_endpoint}/api/stats`);
+      const res = await fetch(`${selectedDb.http_endpoint}/api/stats`, {
+        signal: AbortSignal.timeout(2500)
+      });
       if (res.ok) {
         const data = await res.json();
         setStats(data);
       }
     } catch {
-      // Offline fallback
+      // Keep previous stats
     }
   };
 
-  useEffect(() => {
-    fetchKeys();
-    fetchStats();
-    const t = setInterval(() => {
-      fetchKeys();
-      fetchStats();
-    }, 4000);
-    return () => clearInterval(t);
-  }, [selectedDb, searchQuery, isDemoMode]);
-
-  // 4. Live Command Monitor (SSE Stream or Simulation)
-  useEffect(() => {
+  // 3. Fetch Keys
+  const fetchKeys = async () => {
     if (isDemoMode) {
-      const commands = ["PUT", "GET", "PUTEX", "PUBLISH", "TTL", "DEL"];
-      const keysSample = ["user:1001", "session:tok_8a", "cache:hero", "order:991", "telemetry:ping"];
-      const interval = setInterval(() => {
-        if (isMonitorPaused) return;
-        const cmd = commands[Math.floor(Math.random() * commands.length)];
-        const k = keysSample[Math.floor(Math.random() * keysSample.length)];
-        const newEvt: OperationEvent = {
-          timestamp: Date.now(),
-          client_addr: "100.95.206.7:" + (49152 + Math.floor(Math.random() * 1000)),
-          command: cmd,
-          key: k,
-          latency_us: Math.floor(Math.random() * 190) + 35,
-          status: "OK",
-          storage_tier: Math.random() > 0.35 ? "memtable" : "sstable"
-        };
-        setEvents((prev) => [...prev.slice(-150), newEvt]);
-      }, 1400);
-      return () => clearInterval(interval);
+      if (keys.length === 0) {
+        setKeys([
+          { key: "session:user_1001", value: '{"id":1001,"role":"admin","status":"active"}', ttl: -1, tier: "memtable" },
+          { key: "rate_limit:ip:10.0.4.12", value: "24", ttl: 58, tier: "memtable", expires: "in 58s" },
+          { key: "cache:catalog:trending", value: '["p_89","p_12","p_44"]', ttl: 3590, tier: "sstable", expires: "in 59m" }
+        ]);
+      }
+      return;
     }
 
-    let eventSource: EventSource | null = null;
     try {
-      eventSource = new EventSource(`${selectedDb.http_endpoint}/api/events`);
-      eventSource.onmessage = (e) => {
+      const res = await fetch(`${selectedDb.http_endpoint}/api/keys`, {
+        signal: AbortSignal.timeout(3000)
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && Array.isArray(data.keys)) {
+          setKeys(data.keys);
+        }
+      }
+    } catch {
+      // Fallback
+    }
+  };
+
+  // Polling loops
+  useEffect(() => {
+    fetchDatabases();
+    const interval = setInterval(fetchDatabases, 6000);
+    return () => clearInterval(interval);
+  }, [supervisorHost]);
+
+  useEffect(() => {
+    fetchStats();
+    fetchKeys();
+    const statTimer = setInterval(fetchStats, 2500);
+    return () => clearInterval(statTimer);
+  }, [selectedDb, isDemoMode]);
+
+  // SSE Monitor Stream
+  useEffect(() => {
+    if (isDemoMode) {
+      const demoInterval = setInterval(() => {
+        if (isMonitorPaused) return;
+        const cmds = ["GET", "PUT", "DEL", "EXPIRE", "KEYS", "AUTH"];
+        const randCmd = cmds[Math.floor(Math.random() * cmds.length)];
+        const randKey = ["user:101", "session:tok", "item:99", "alpha:lock", "stats:views"][Math.floor(Math.random() * 5)];
+        const newEv: OperationEvent = {
+          timestamp: Date.now(),
+          client_addr: `100.95.206.7:${Math.floor(30000 + Math.random() * 20000)}`,
+          command: randCmd,
+          key: randCmd === "AUTH" ? undefined : randKey,
+          latency_us: Math.floor(40 + Math.random() * 180),
+          status: "OK",
+          storage_tier: Math.random() > 0.3 ? "memtable" : "sstable"
+        };
+        setEvents((prev) => [...prev.slice(-99), newEv]);
+      }, 1400);
+      return () => clearInterval(demoInterval);
+    }
+
+    let es: EventSource | null = null;
+    try {
+      es = new EventSource(`${selectedDb.http_endpoint}/api/monitor`);
+      es.onmessage = (e) => {
         if (isMonitorPaused) return;
         try {
           const parsed = JSON.parse(e.data);
-          if (parsed.command) {
-            setEvents((prev) => [...prev.slice(-150), parsed]);
-          }
-        } catch {}
+          setEvents((prev) => [...prev.slice(-99), parsed]);
+        } catch {
+          // ignore
+        }
       };
-    } catch {}
+    } catch {
+      // Fallback
+    }
 
     return () => {
-      if (eventSource) eventSource.close();
+      if (es) es.close();
     };
   }, [selectedDb, isDemoMode, isMonitorPaused]);
 
-  useEffect(() => {
-    if (activeTab === "monitor" && !isMonitorPaused) {
-      monitorEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    }
-  }, [events, activeTab, isMonitorPaused]);
-
-  useEffect(() => {
-    cliBottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [cliHistory]);
-
-  // Create Database Handler — Guarantees selection of new DB and no tile shuffling
-  const handleCreateDatabase = async (e: React.FormEvent) => {
+  // Execute Command via HTTP REST or Simulation
+  const handleExecuteCli = async (e: React.FormEvent) => {
     e.preventDefault();
-    const dbName = newDbName.trim() || `db-cluster-${databases.length + 1}`;
+    const raw = cliInput.trim();
+    if (!raw) return;
+
+    setCliInput("");
+    const startTime = performance.now();
 
     if (isDemoMode) {
-      const nextPort = 4100 + databases.length;
-      const nextHttpPort = 5100 + databases.length;
-      const newId = "sdr-db-" + Math.random().toString(36).substring(2, 9);
-      const newToken = "sdr_live_" + Math.random().toString(36).substring(2, 16);
+      const parts = raw.split(" ");
+      const verb = parts[0].toUpperCase();
+      let simulatedResp = "ERR unknown command";
 
-      const created: DatabaseInstance = {
-        id: newId,
-        name: dbName,
+      if (verb === "AUTH") {
+        simulatedResp = "OK";
+      } else if (verb === "PING") {
+        simulatedResp = "PONG";
+      } else if (verb === "PUT" && parts.length >= 3) {
+        simulatedResp = "OK";
+        setKeys((prev) => [
+          ...prev.filter((k) => k.key !== parts[1]),
+          { key: parts[1], value: parts.slice(2).join(" "), ttl: -1, tier: "memtable" }
+        ]);
+      } else if (verb === "GET" && parts.length >= 2) {
+        const found = keys.find((k) => k.key === parts[1]);
+        simulatedResp = found ? `"${found.value}"` : "(nil)";
+      } else if (verb === "DEL" && parts.length >= 2) {
+        setKeys((prev) => prev.filter((k) => k.key !== parts[1]));
+        simulatedResp = "1";
+      } else if (verb === "KEYS") {
+        simulatedResp = keys.map((k, i) => `${i + 1}) "${k.key}"`).join("\r\n") || "(empty list)";
+      } else if (verb === "INFO") {
+        simulatedResp = `# Sider Server v2.1.0\r\nstatus:online\r\nengine:LSM-Tree\r\nregion:ind-tbn-1\r\nmemtable_entries:${keys.length}\r\nwal_bytes:128`;
+      }
+
+      const elapsed = (performance.now() - startTime).toFixed(2);
+      setCliHistory((prev) => [...prev, { cmd: raw, resp: simulatedResp, time: `${elapsed}ms` }]);
+      setTimeout(() => cliBottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+      return;
+    }
+
+    try {
+      const res = await fetch(`${selectedDb.http_endpoint}/api/exec`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          command: raw,
+          token: selectedDb.token
+        })
+      });
+      const data = await res.json();
+      const elapsed = (performance.now() - startTime).toFixed(2);
+      setCliHistory((prev) => [
+        ...prev,
+        { cmd: raw, resp: data.output || data.error || "OK", time: `${elapsed}ms` }
+      ]);
+      fetchKeys();
+      fetchStats();
+    } catch {
+      const elapsed = (performance.now() - startTime).toFixed(2);
+      setCliHistory((prev) => [
+        ...prev,
+        { cmd: raw, resp: "ERR connection failed to node endpoint", time: `${elapsed}ms` }
+      ]);
+    }
+
+    setTimeout(() => cliBottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+  };
+
+  // Add Key in Browser
+  const handleAddKey = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newKey.trim()) return;
+
+    const cmd = newTTL
+      ? `PUT ${newKey.trim()} ${newVal || '""'} ${newTTL}`
+      : `PUT ${newKey.trim()} ${newVal || '""'}`;
+
+    if (isDemoMode) {
+      setKeys((prev) => [
+        ...prev.filter((k) => k.key !== newKey.trim()),
+        {
+          key: newKey.trim(),
+          value: newVal || '""',
+          ttl: newTTL ? parseInt(newTTL) : -1,
+          tier: "memtable"
+        }
+      ]);
+      setNewKey("");
+      setNewVal("");
+      setNewTTL("");
+      return;
+    }
+
+    try {
+      await fetch(`${selectedDb.http_endpoint}/api/exec`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ command: cmd, token: selectedDb.token })
+      });
+      setNewKey("");
+      setNewVal("");
+      setNewTTL("");
+      fetchKeys();
+      fetchStats();
+    } catch {
+      // Error handling
+    }
+  };
+
+  // Delete Key
+  const handleDeleteKey = async (targetKey: string) => {
+    if (isDemoMode) {
+      setKeys((prev) => prev.filter((k) => k.key !== targetKey));
+      return;
+    }
+    try {
+      await fetch(`${selectedDb.http_endpoint}/api/exec`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ command: `DEL ${targetKey}`, token: selectedDb.token })
+      });
+      fetchKeys();
+      fetchStats();
+    } catch {
+      // Error handling
+    }
+  };
+
+  // Create Database Instance
+  const handleCreateDatabase = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newDbName.trim()) return;
+    setLoading(true);
+
+    if (isDemoMode || !supervisorOnline) {
+      const newInst: DatabaseInstance = {
+        id: `sdr-db-${Math.random().toString(16).slice(2, 10)}`,
+        name: newDbName.trim().toLowerCase().replace(/\s+/g, "-"),
         region: newDbRegion,
-        tcp_port: nextPort,
-        http_port: nextHttpPort,
-        token: newToken,
+        tcp_port: 4100 + databases.length,
+        http_port: 5100 + databases.length,
+        token: `sdr_live_${Math.random().toString(16).slice(2, 34)}`,
         status: "running",
-        connection_uri: `sider://default:${newToken}@100.95.206.7:${nextPort}`,
-        http_endpoint: `http://100.95.206.7:${nextHttpPort}`,
+        connection_uri: `sider://default:token@100.95.206.7:${4100 + databases.length}`,
+        http_endpoint: `http://100.95.206.7:${5100 + databases.length}`,
         created_at: new Date().toISOString()
       };
-
-      setDatabases((prev) => [...prev, created].sort((a, b) => a.tcp_port - b.tcp_port));
-      setSelectedDbId(created.id); // LOCK FOCUS ON NEWLY CREATED DB
+      const updated = [...databases, newInst].sort((a, b) => a.tcp_port - b.tcp_port);
+      setDatabases(updated);
+      setSelectedDbId(newInst.id);
+      setLoading(false);
       setShowNewDbModal(false);
       setNewDbName("");
       return;
@@ -325,216 +431,165 @@ export default function SiderConsolePage() {
       const res = await fetch(`${supervisorHost}/api/databases`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: dbName, region: newDbRegion })
+        body: JSON.stringify({
+          name: newDbName.trim(),
+          region: newDbRegion
+        })
       });
       if (res.ok) {
-        const created: DatabaseInstance = await res.json();
-        setDatabases((prev) => {
-          const filtered = prev.filter((d) => d.id !== created.id);
-          return [...filtered, created].sort((a, b) => a.tcp_port - b.tcp_port);
-        });
-        setSelectedDbId(created.id); // LOCK FOCUS ON NEWLY CREATED DB
+        const created = await res.json();
+        const updated = [...databases.filter((d) => d.id !== created.id), created].sort(
+          (a, b) => a.tcp_port - b.tcp_port
+        );
+        setDatabases(updated);
+        setSelectedDbId(created.id);
         setShowNewDbModal(false);
         setNewDbName("");
       }
-    } catch (err) {
-      alert("Error creating database: " + err);
+    } catch {
+      // Error handling
+    } finally {
+      setLoading(false);
     }
   };
 
-  // Execute Web CLI Command
-  const handleCliSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!cliInput.trim()) return;
-    const cmd = cliInput.trim();
-    setCliInput("");
-    const startTime = performance.now();
+  // Delete Database
+  const handleDeleteDatabase = async (id: string) => {
+    if (databases.length <= 1) {
+      alert("At least one database instance must be retained.");
+      return;
+    }
+    if (!confirm(`Are you sure you want to terminate database instance '${selectedDb.name}'?`)) {
+      return;
+    }
 
-    if (isDemoMode) {
-      let resp = "OK";
-      if (cmd.startsWith("GET")) resp = '"demo_value_payload"';
-      else if (cmd.startsWith("INFO")) resp = "# Sider Server v2.1.0\r\nstatus:online\r\nmemtable_entries:14\r\nengine:LSM-Tree";
-      else if (cmd.startsWith("PING")) resp = "PONG";
-      else if (cmd.startsWith("TTL")) resp = "240";
-      const timeMs = (performance.now() - startTime).toFixed(2) + "ms";
-      setCliHistory((prev) => [...prev, { cmd, resp, time: timeMs }]);
+    if (isDemoMode || !supervisorOnline) {
+      const filtered = databases.filter((d) => d.id !== id);
+      setDatabases(filtered);
+      setSelectedDbId(filtered[0]?.id || DEFAULT_INSTANCE.id);
       return;
     }
 
     try {
-      const res = await fetch(`${selectedDb.http_endpoint}/api/exec`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ command: cmd, token: selectedDb.token })
-      });
-      const data = await res.json();
-      const timeMs = (performance.now() - startTime).toFixed(2) + "ms";
-      setCliHistory((prev) => [...prev, { cmd, resp: data.response, time: timeMs }]);
-      fetchKeys();
-      fetchStats();
+      const res = await fetch(`${supervisorHost}/api/databases/${id}`, { method: "DELETE" });
+      if (res.ok) {
+        const filtered = databases.filter((d) => d.id !== id);
+        setDatabases(filtered);
+        setSelectedDbId(filtered[0]?.id || DEFAULT_INSTANCE.id);
+      }
     } catch {
-      const timeMs = (performance.now() - startTime).toFixed(2) + "ms";
-      setCliHistory((prev) => [...prev, { cmd, resp: "ERR connection failed to instance HTTP gateway", time: timeMs }]);
+      // Error handling
     }
-  };
-
-  // Add Key Action
-  const handleAddKey = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newKey || !newVal) return;
-
-    let cmd = `PUT ${newKey} ${newVal}`;
-    if (newTTL && parseInt(newTTL) > 0) {
-      cmd = `PUTEX ${newKey} ${newTTL} ${newVal}`;
-    }
-
-    if (isDemoMode) {
-      setKeys((prev) => [
-        { key: newKey, value: newVal, ttl: newTTL ? parseInt(newTTL) : -1, tier: "memtable" },
-        ...prev
-      ]);
-      setNewKey("");
-      setNewVal("");
-      setNewTTL("");
-      return;
-    }
-
-    await fetch(`${selectedDb.http_endpoint}/api/exec`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ command: cmd, token: selectedDb.token })
-    });
-    setNewKey("");
-    setNewVal("");
-    setNewTTL("");
-    fetchKeys();
-    fetchStats();
-  };
-
-  // Delete Key Action
-  const handleDeleteKey = async (key: string) => {
-    if (isDemoMode) {
-      setKeys((prev) => prev.filter((k) => k.key !== key));
-      return;
-    }
-    await fetch(`${selectedDb.http_endpoint}/api/exec`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ command: `DEL ${key}`, token: selectedDb.token })
-    });
-    fetchKeys();
-    fetchStats();
   };
 
   // Filtered keys
   const filteredKeys = keys.filter((k) => {
-    if (keyFilterTier !== "ALL" && k.tier !== keyFilterTier) return false;
-    if (searchQuery && !k.key.toLowerCase().includes(searchQuery.toLowerCase())) return false;
-    return true;
+    const matchesSearch = k.key.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesTier = keyFilterTier === "ALL" || k.tier === keyFilterTier;
+    return matchesSearch && matchesTier;
   });
 
   // Filtered events
-  const filteredEvents = events.filter((e) => {
-    if (filterCmd !== "ALL" && e.command !== filterCmd) return false;
-    return true;
+  const filteredEvents = events.filter((ev) => {
+    if (filterCmd === "ALL") return true;
+    return ev.command.toUpperCase() === filterCmd;
   });
 
-  // Code snippet generators
-  const getSnippet = (lang: LanguageId): string => {
+  // Multi-Language SDK Snippets
+  const getSnippet = (lang: LanguageId) => {
     const host = "100.95.206.7";
     const port = selectedDb.tcp_port;
-    const token = selectedDb.token;
     const httpPort = selectedDb.http_port;
+    const token = selectedDb.token;
 
     switch (lang) {
       case "python":
-        return `import socket
+        return `# Sider Python Client for ind-tbn-1
+import socket
 
 class SiderClient:
     def __init__(self, host="${host}", port=${port}, token="${token}"):
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.sock.connect((host, port))
-        if token:
-            self._send(f"AUTH {token}")
+        self.sock = socket.create_connection((host, port))
+        self.send(f"AUTH {token}")
 
-    def _send(self, cmd: str) -> str:
-        self.sock.sendall((cmd + "\\n").encode("utf-8"))
-        return self.sock.recv(4096).decode("utf-8").strip()
+    def send(self, cmd: str) -> str:
+        self.sock.sendall(f"{cmd}\\r\\n".encode())
+        return self.sock.recv(4096).decode().strip()
 
-    def set(self, key: str, value: str) -> str:
-        return self._send(f"PUT {key} {value}")
+    def put(self, key: str, value: str, ttl_sec: int = 0) -> str:
+        return self.send(f"PUT {key} {value} {ttl_sec}" if ttl_sec > 0 else f"PUT {key} {value}")
 
     def get(self, key: str) -> str:
-        return self._send(f"GET {key}")
+        return self.send(f"GET {key}")
 
-# Usage:
-db = SiderClient()
-db.set("user:101", '{"name":"Alice","role":"admin"}')
-print("Value:", db.get("user:101"))`;
+client = SiderClient()
+print("Write:", client.put("user:session_99", '{"status":"active"}'))
+print("Read:", client.get("user:session_99"))`;
 
       case "node":
-        return `import net from "node:net";
+        return `// Sider Node.js / TypeScript Driver
+import net from "net";
 
-class SiderClient {
-  private client = new net.Socket();
+export class SiderClient {
+  private client: net.Socket;
 
-  async connect(host = "${host}", port = ${port}, token = "${token}"): Promise<void> {
-    return new Promise((resolve) => {
-      this.client.connect(port, host, () => {
-        this.command(\`AUTH \${token}\`).then(() => resolve());
-      });
+  constructor(host = "${host}", port = ${port}, token = "${token}") {
+    this.client = net.createConnection({ host, port }, () => {
+      this.client.write(\`AUTH \${token}\\r\\n\`);
     });
   }
 
-  command(cmd: string): Promise<string> {
+  async execute(cmd: string): Promise<string> {
     return new Promise((resolve) => {
       this.client.once("data", (data) => resolve(data.toString().trim()));
-      this.client.write(\`\${cmd}\\n\`);
+      this.client.write(\`\${cmd}\\r\\n\`);
     });
   }
 }
 
-// Usage:
 const db = new SiderClient();
-await db.connect();
-await db.command('PUT user:101 "Alice"');
-console.log(await db.command('GET user:101'));`;
+await db.execute('PUT session:active "token_live_123"');
+const res = await db.execute('GET session:active');
+console.log("Sider Result:", res);`;
 
       case "go":
-        return `package main
+        return `// Sider Native Go Client
+package main
 
 import (
-\t"bufio"
-\t"fmt"
-\t"net"
+	"bufio"
+	"fmt"
+	"net"
 )
 
 func main() {
-\tconn, err := net.Dial("tcp", "${host}:${port}")
-\tif err != nil {
-\t\tpanic(err)
-\t}
-\tdefer conn.Close()
+	conn, err := net.Dial("tcp", "${host}:${port}")
+	if err != nil {
+		panic(err)
+	}
+	defer conn.Close()
 
-\treader := bufio.NewReader(conn)
+	reader := bufio.NewReader(conn)
 
-\t// 1. Authenticate with instance token
-\tfmt.Fprintf(conn, "AUTH ${token}\\n")
-\tresp, _ := reader.ReadString('\\n')
-\tfmt.Println("Auth:", resp)
+	// 1. Authenticate
+	fmt.Fprintf(conn, "AUTH ${token}\\r\\n")
+	resp, _ := reader.ReadString('\\n')
+	fmt.Printf("Auth: %s", resp)
 
-\t// 2. Set key-value
-\tfmt.Fprintf(conn, "PUT cluster:status healthy\\n")
-\tresp, _ = reader.ReadString('\\n')
+	// 2. Put key
+	fmt.Fprintf(conn, "PUT telemetry:temperature 23.4\\r\\n")
+	resp, _ = reader.ReadString('\\n')
+	fmt.Printf("Put: %s", resp)
 
-\t// 3. Query key
-\tfmt.Fprintf(conn, "GET cluster:status\\n")
-\tval, _ := reader.ReadString('\\n')
-\tfmt.Println("Status:", val)
+	// 3. Get key
+	fmt.Fprintf(conn, "GET telemetry:temperature\\r\\n")
+	resp, _ = reader.ReadString('\\n')
+	fmt.Printf("Value: %s", resp)
 }`;
 
       case "rust":
-        return `use std::io::{BufRead, BufReader, Write};
+        return `// Sider Rust Driver
+use std::io::{BufRead, BufReader, Write};
 use std::net::TcpStream;
 
 fn main() -> std::io::Result<()> {
@@ -542,30 +597,33 @@ fn main() -> std::io::Result<()> {
     let mut reader = BufReader::new(stream.try_clone()?);
 
     // 1. Authenticate
-    writeln!(stream, "AUTH {}", "${token}")?;
-    let mut auth_resp = String::new();
-    reader.read_line(&mut auth_resp)?;
+    writeln!(stream, "AUTH ${token}")?;
+    let mut line = String::new();
+    reader.read_line(&mut line)?;
+    println!("Auth: {}", line.trim());
 
-    // 2. Put key
-    writeln!(stream, "PUT metrics:latency 42us")?;
-    let mut put_resp = String::new();
-    reader.read_line(&mut put_resp)?;
+    // 2. Write key
+    writeln!(stream, "PUT cache:region 'ind-tbn-1'")?;
+    line.clear();
+    reader.read_line(&mut line)?;
+    println!("Put: {}", line.trim());
 
-    // 3. Get key
-    writeln!(stream, "GET metrics:latency")?;
-    let mut get_resp = String::new();
-    reader.read_line(&mut get_resp)?;
-    println!("Response: {}", get_resp.trim());
+    // 3. Read key
+    writeln!(stream, "GET cache:region")?;
+    line.clear();
+    reader.read_line(&mut line)?;
+    println!("Val: {}", line.trim());
 
     Ok(())
 }`;
 
       case "java":
-        return `import java.io.*;
-import java.net.Socket;
+        return `// Sider Java / Spring Boot Driver
+import java.io.*;
+import java.net.*;
 
 public class SiderQuickstart {
-    public static void main(String[] args) throws Exception {
+    public static void main(String[] args) throws IOException {
         try (Socket socket = new Socket("${host}", ${port});
              PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
              BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
@@ -575,22 +633,23 @@ public class SiderQuickstart {
             System.out.println("Auth: " + in.readLine());
 
             // 2. Write key
-            out.println("PUT order:2049 '{\\"items\\": 4}'");
+            out.println("PUT order:9482 '{\\"total\\":45.99}'");
             System.out.println("Put: " + in.readLine());
 
             // 3. Read key
-            out.println("GET order:2049");
+            out.println("GET order:9482");
             System.out.println("Value: " + in.readLine());
         }
     }
 }`;
 
       case "csharp":
-        return `using System;
+        return `// Sider .NET / C# Client
+using System;
 using System.IO;
 using System.Net.Sockets;
 
-class SiderClient {
+class Program {
     static void Main() {
         using var client = new TcpClient("${host}", ${port});
         using var stream = client.GetStream();
@@ -631,104 +690,113 @@ printf "AUTH ${token}\\nPUT alpha:ping pong\\nGET alpha:ping\\nINFO\\n" | nc ${h
 
   return (
     <div
-      className="min-h-screen text-[#1b1b1b] flex flex-col font-sans select-none antialiased"
-      style={{ backgroundColor: "#eaeaea", fontFamily: "var(--font-inter), sans-serif" }}
+      className="min-h-screen text-[#ffffff] flex flex-col font-sans select-none antialiased relative"
+      style={{ backgroundColor: "#0e0e0e", fontFamily: "var(--font-inter), sans-serif" }}
     >
-      {/* 1. TOP ANNOUNCEMENT BAR (Grafbase Forest-to-Deep-Teal Gradient) */}
+      {/* 1. TOP SIGNAL STRIP (VIOLET GLOW ACCENT) */}
       <div
-        className="w-full h-10 px-4 text-white text-[13px] font-medium flex items-center justify-center gap-2 shadow-sm z-50 sticky top-0"
+        className="w-full h-10 px-4 text-white text-[12px] font-medium flex items-center justify-center gap-2 border-b border-[#414042]/50 z-50 sticky top-0"
         style={{
-          background: "linear-gradient(89.97deg, rgb(25, 160, 95) 0.02%, rgb(13, 127, 140) 123.85%)"
+          background: "linear-gradient(179deg, rgba(64,91,255,0.25) 1.06%, rgba(112,132,255,0.06) 123.42%)"
         }}
       >
-        <span>
-          <strong>Sider Cloud Public Alpha v0.2.1</strong>: Zero-dependency LSM storage with native SkipList MemTable, WAL durability & SSTable tiering.
+        <span className="w-1.5 h-1.5 rounded-full bg-[#405bff] animate-pulse" />
+        <span className="font-mono text-[#7084ff] uppercase font-bold tracking-wider text-[10px] px-2 py-0.5 rounded-[30px] bg-[#405bff]/20 border border-[#405bff]/40">
+          PUBLIC ALPHA v0.2.1
         </span>
-        <Link href="/" className="underline hover:opacity-85 font-medium ml-1">
+        <span className="text-[#d1d3d4]">
+          <strong>Sider Cloud Cockpit</strong> — Zero-dependency LSM storage with native SkipList MemTable on region <code className="text-[#7084ff] font-mono">ind-tbn-1</code>.
+        </span>
+        <Link href="/" className="text-[#7084ff] hover:underline font-semibold ml-1 hidden sm:inline">
           Explore Architecture &rarr;
         </Link>
       </div>
 
-      {/* 2. CLINICAL MARBLE NAVIGATION BAR */}
-      <header className="w-full bg-[#ffffff] border-b border-[#e0e1e6] px-6 h-16 flex items-center justify-between sticky top-10 z-40">
-        <div className="flex items-center gap-6">
-          <Link href="/" className="flex items-center gap-3 group">
-            <SiderLogo size={28} />
-            <div className="flex flex-col">
-              <span
-                className="text-[15px] font-semibold text-[#1b1b1b] tracking-[-0.03em]"
-                style={{ letterSpacing: "-0.5px" }}
-              >
-                Sider Cloud
-              </span>
-              <div className="flex items-center gap-1.5">
-                <span className="text-[11px] text-[#60646c] font-normal leading-tight">
-                  LSM-Tree Console
+      {/* 2. FLOATING COCKPIT HEADER BAR (60px radius pill) */}
+      <div className="w-full max-w-[1360px] mx-auto pt-4 px-4 sticky top-10 z-40">
+        <header className="w-full bg-[#191919] border border-white/10 rounded-[60px] px-6 h-14 flex items-center justify-between shadow-[0_4px_20px_rgba(0,0,0,0.45)] backdrop-blur-md">
+          <div className="flex items-center gap-4">
+            <Link href="/" className="flex items-center gap-3 group">
+              <SiderLogo size={24} />
+              <div className="flex items-center gap-2">
+                <span className="text-[15px] font-medium text-white tracking-[-0.02em]">
+                  Sider Cloud
                 </span>
-                <span className="px-1.5 py-0.2 rounded-[40px] text-[9px] font-mono bg-[#0d7f8c]/15 text-[#0d7f8c] border border-[#0d7f8c]/30 font-semibold">
+                <span className="text-[9px] font-mono uppercase bg-[#405bff]/20 text-[#7084ff] border border-[#405bff]/40 px-2 py-0.5 rounded-[30px]">
                   ALPHA
                 </span>
               </div>
-            </div>
-          </Link>
+            </Link>
 
-          <div className="hidden lg:flex items-center gap-2 pl-4 border-l border-[#e0e1e6]">
-            <span className="text-[12px] text-[#60646c]">Control Plane:</span>
-            <span className="text-[12px] font-mono text-[#1b1b1b] bg-[#eaeaea] px-2 py-0.5 rounded-[4px] border border-[#e0e1e6]">
-              {supervisorHost}
-            </span>
-            <div className="flex items-center gap-1.5 ml-1">
-              <span
-                className={`w-2 h-2 rounded-full ${
-                  isDemoMode ? "bg-[#eab308]" : supervisorOnline ? "bg-[#0d7f8c]" : "bg-[#ef4444]"
-                }`}
-              />
-              <span className="text-[11px] text-[#7c7c7c]">
-                {isDemoMode ? "Sandbox" : supervisorOnline ? "Live Node" : "Connecting"}
+            <div className="hidden lg:flex items-center gap-2 pl-4 border-l border-[#414042]">
+              <span className="text-[12px] text-[#6d6e71]">Node:</span>
+              <span className="text-[11px] font-mono text-[#7084ff] bg-[#0e0e0e] px-2 py-0.5 rounded-[30px] border border-[#414042]">
+                100.95.206.7 (ind-tbn-1)
               </span>
+              <div className="flex items-center gap-1.5 ml-1">
+                <span
+                  className={`w-2 h-2 rounded-full ${
+                    isDemoMode ? "bg-[#eab308]" : supervisorOnline ? "bg-[#405bff] shadow-[0_0_8px_rgba(64,91,255,0.8)]" : "bg-[#ef4444]"
+                  }`}
+                />
+                <span className="text-[11px] text-[#a7a9ac]">
+                  {isDemoMode ? "Sandbox" : supervisorOnline ? "Live Mesh" : "Connecting"}
+                </span>
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* Right Nav Actions */}
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => setIsDemoMode((prev) => !prev)}
-            className="px-3.5 py-1.5 rounded-[40px] text-[13px] font-medium border border-[#e0e1e6] bg-[#ffffff] text-[#1b1b1b] hover:bg-[#eaeaea]/50 transition-colors"
-          >
-            {isDemoMode ? "🟡 Sandbox Simulated" : "🟢 Live Cloud Node"}
-          </button>
+          {/* Right Nav Actions with Dynamic Clerk Auth */}
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setIsDemoMode((prev) => !prev)}
+              className="px-3.5 py-1 rounded-[30px] text-[12px] font-medium border border-[#414042] bg-[#0e0e0e] text-[#d1d3d4] hover:text-white hover:border-[#405bff] transition-colors cursor-pointer"
+            >
+              {isDemoMode ? "🟡 Sandbox Simulated" : "🟢 Live Bare-Metal"}
+            </button>
 
-          <Link
-            href="/sign-in"
-            className="px-3.5 py-1.5 rounded-[40px] border border-[#e0e1e6] bg-white text-[#1b1b1b] text-[13px] font-medium hover:bg-[#eaeaea]/60 transition-colors hidden sm:inline-block"
-          >
-            Sign in
-          </Link>
+            {/* Dynamic Clerk Status: Keeps user profile and stays signed in */}
+            {isLoaded && isSignedIn && (
+              <div className="flex items-center gap-2 pl-2 border-l border-[#414042]">
+                <span className="text-[12px] font-mono text-[#a7a9ac] hidden md:inline">
+                  {user?.primaryEmailAddress?.emailAddress || user?.firstName || "Developer"}
+                </span>
+                <UserButton />
+              </div>
+            )}
+            {isLoaded && !isSignedIn && (
+              <Link
+                href="/sign-in"
+                className="px-4 py-1 rounded-[30px] border border-[#414042] bg-[#191919] text-[#d1d3d4] hover:text-white hover:border-[#405bff] text-[12px] font-medium transition-colors"
+              >
+                Sign in
+              </Link>
+            )}
 
-          <button
-            onClick={() => setShowNewDbModal(true)}
-            className="px-4 py-2 rounded-[6px] text-[13px] font-medium text-white bg-[#1b1b1b] hover:opacity-90 transition-all shadow-[0px_4px_20px_0px_rgba(0,0,0,0.15)] flex items-center gap-1.5"
-          >
-            <span className="text-base leading-none">+</span>
-            <span>New Database</span>
-          </button>
-        </div>
-      </header>
+            <button
+              onClick={() => setShowNewDbModal(true)}
+              className="px-4 py-1.5 rounded-[30px] text-[13px] font-medium text-white bg-[#405bff] hover:bg-[#344bd6] transition-all shadow-[0_0_20px_rgba(64,91,255,0.4)] flex items-center gap-1.5 cursor-pointer"
+            >
+              <span className="text-base leading-none">+</span>
+              <span>New Database</span>
+            </button>
+          </div>
+        </header>
+      </div>
 
-      {/* 3. MAIN WORKSPACE (Max 1280px Blueprint Container) */}
-      <div className="flex-1 w-full max-w-[1360px] mx-auto p-4 sm:p-6 lg:p-8 flex flex-col lg:flex-row gap-6">
+      {/* 3. MAIN WORKSPACE (LaunchDarkly Neon Control Cockpit) */}
+      <div className="flex-1 w-full max-w-[1360px] mx-auto p-4 sm:p-6 lg:p-8 flex flex-col lg:flex-row gap-6 mt-2">
         
-        {/* LEFT COLUMN: ARCHITECTURAL INSTANCE NAV (280px) */}
+        {/* LEFT COLUMN: INSTANCE SELECTOR & HARDWARE SPECS (280px) */}
         <aside className="w-full lg:w-72 flex flex-col gap-4 shrink-0">
-          <div className="bg-[#ffffff] rounded-[20px] border border-[#e0e1e6] p-5 shadow-sm">
+          <div className="bg-[#191919] rounded-[30px] border border-[#414042] p-5 shadow-[0_0_20px_rgba(0,0,0,0.5)]">
             <div className="flex items-center justify-between mb-3">
-              <span className="text-[12px] font-semibold text-[#7c7c7c] uppercase tracking-wider">
-                Instances ({databases.length})
+              <span className="text-[11px] font-semibold text-[#a7a9ac] uppercase tracking-wider font-mono">
+                INSTANCES ({databases.length})
               </span>
               <button
                 onClick={fetchDatabases}
-                className="text-[11px] text-[#60646c] hover:text-[#1b1b1b] underline"
+                className="text-[11px] text-[#7084ff] hover:underline cursor-pointer"
               >
                 Refresh
               </button>
@@ -742,21 +810,21 @@ printf "AUTH ${token}\\nPUT alpha:ping pong\\nGET alpha:ping\\nINFO\\n" | nc ${h
                   <div
                     key={db.id}
                     onClick={() => setSelectedDbId(db.id)}
-                    className={`p-3.5 rounded-[12px] border cursor-pointer transition-all ${
+                    className={`p-3.5 rounded-[20px] border cursor-pointer transition-all ${
                       isSelected
-                        ? "bg-[#eaeaea]/60 border-[#1b1b1b] shadow-sm ring-1 ring-[#1b1b1b]"
-                        : "bg-[#ffffff] border-[#e0e1e6] hover:border-[#b0b3ba]"
+                        ? "bg-[#0e0e0e] border-[#405bff] shadow-[0_0_20px_rgba(64,91,255,0.3)] ring-1 ring-[#405bff]"
+                        : "bg-[#191919] border-[#414042] hover:border-[#58595b]"
                     }`}
                   >
                     <div className="flex items-center justify-between">
-                      <span className="text-[14px] font-semibold text-[#1b1b1b]">
+                      <span className="text-[14px] font-medium text-white">
                         {db.name}
                       </span>
-                      <span className="w-2 h-2 rounded-full bg-[#19a05f]" />
+                      <span className={`w-2 h-2 rounded-full ${isSelected ? "bg-[#405bff] animate-pulse" : "bg-[#19a05f]"}`} />
                     </div>
-                    <div className="mt-1 flex items-center justify-between text-[11px] font-mono text-[#60646c]">
+                    <div className="mt-1 flex items-center justify-between text-[11px] font-mono text-[#a7a9ac]">
                       <span>PORT :{db.tcp_port}</span>
-                      <span className="text-[10px] text-[#7c7c7c]">{db.id.slice(0, 10)}</span>
+                      <span className="text-[10px] text-[#6d6e71]">{db.id.slice(0, 10)}</span>
                     </div>
                   </div>
                 );
@@ -765,78 +833,78 @@ printf "AUTH ${token}\\nPUT alpha:ping pong\\nGET alpha:ping\\nINFO\\n" | nc ${h
           </div>
 
           {/* HARDWARE BLUEPRINT CARD — CLOUD SPECIFICATIONS ONLY */}
-          <div className="bg-[#ffffff] rounded-[20px] border border-[#e0e1e6] p-5 text-[12px] space-y-2.5 shadow-sm">
-            <div className="text-[11px] font-semibold text-[#7c7c7c] uppercase tracking-wider">
-              Cloud Node Specifications
+          <div className="bg-[#191919] rounded-[30px] border border-[#414042] p-5 text-[12px] space-y-2.5 shadow-[0_0_20px_rgba(0,0,0,0.5)]">
+            <div className="text-[11px] font-semibold text-[#7084ff] uppercase tracking-wider font-mono">
+              CLOUD NODE SPECIFICATIONS
             </div>
             <div className="flex items-center justify-between pt-1">
-              <span className="text-[#60646c]">Architecture</span>
-              <span className="font-medium text-[#1b1b1b]">x86_64 Bare-Metal</span>
+              <span className="text-[#a7a9ac]">Architecture</span>
+              <span className="font-medium text-white font-mono">x86_64 Bare-Metal</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-[#60646c]">Processor (CPU)</span>
-              <span className="font-mono text-[#1b1b1b]">Intel i5-9600 (6 Cores)</span>
+              <span className="text-[#a7a9ac]">Processor (CPU)</span>
+              <span className="font-mono text-white">Intel i5-9600 (6 Cores)</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-[#60646c]">Memory (RAM)</span>
-              <span className="font-mono text-[#1b1b1b]">16GB DDR4</span>
+              <span className="text-[#a7a9ac]">Memory (RAM)</span>
+              <span className="font-mono text-white">16GB DDR4</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-[#60646c]">GPU Accelerator</span>
-              <span className="font-mono text-[#0d7f8c] font-medium">NVIDIA GTX 1660 Ti</span>
+              <span className="text-[#a7a9ac]">GPU Accelerator</span>
+              <span className="font-mono text-[#7084ff] font-medium">NVIDIA GTX 1660 Ti</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-[#60646c]">Storage (NVMe)</span>
-              <span className="font-mono text-[#1b1b1b]">480GB High-IOPS SSD</span>
+              <span className="text-[#a7a9ac]">Storage (NVMe)</span>
+              <span className="font-mono text-white">480GB High-IOPS SSD</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-[#60646c]">Region</span>
-              <span className="font-mono text-[#1b1b1b]">Edge Node (ap-south-1)</span>
+              <span className="text-[#a7a9ac]">Region</span>
+              <span className="font-mono text-[#3dd6f5]">ind-tbn-1</span>
             </div>
-            <div className="pt-2 border-t border-[#e0e1e6] flex items-center justify-between text-[11px]">
-              <span className="text-[#7c7c7c]">Storage Engine</span>
-              <span className="text-[#19a05f] font-medium">SkipList + LSM v2.1.0</span>
+            <div className="pt-2 border-t border-[#414042] flex items-center justify-between text-[11px]">
+              <span className="text-[#6d6e71]">Storage Engine</span>
+              <span className="text-[#7084ff] font-medium font-mono">SkipList + LSM v2.1.0</span>
             </div>
           </div>
         </aside>
 
-        {/* RIGHT COLUMN: ACTIVE DATABASE BLUEPRINT WORKSPACE */}
+        {/* RIGHT COLUMN: ACTIVE DATABASE WORKSPACE */}
         <main className="flex-1 flex flex-col gap-6 min-w-0">
           
           {/* HEADER HERO CARD */}
-          <div className="bg-[#ffffff] rounded-[20px] border border-[#e0e1e6] p-6 lg:p-7 shadow-sm">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-[#e0e1e6]">
+          <div className="bg-[#191919] rounded-[30px] border border-[#414042] p-6 lg:p-7 shadow-[0_0_30px_rgba(0,0,0,0.5)]">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-[#414042]">
               <div>
                 <div className="flex items-center gap-3">
-                  <h1
-                    className="text-[28px] sm:text-[36px] font-semibold text-[#1b1b1b]"
-                    style={{ letterSpacing: "-1px" }}
-                  >
+                  <h1 className="text-[28px] sm:text-[36px] font-medium text-white tracking-tight">
                     {selectedDb.name}
                   </h1>
-                  <span className="px-2.5 py-0.5 rounded-[40px] text-[11px] font-medium bg-[#19a05f]/15 text-[#19a05f] border border-[#19a05f]/30">
-                    ONLINE
+                  <span className="px-3 py-0.5 rounded-[30px] text-[11px] font-medium bg-[#405bff]/20 text-[#7084ff] border border-[#405bff]/40 font-mono">
+                    ● ACTIVE
+                  </span>
+                  <span className="px-2.5 py-0.5 rounded-[30px] text-[10px] font-mono bg-[#0e0e0e] text-[#3dd6f5] border border-[#414042]">
+                    ind-tbn-1
                   </span>
                 </div>
-                <p className="text-[14px] text-[#60646c] mt-1">
+                <p className="text-[14px] text-[#a7a9ac] mt-1">
                   Single-tenant LSM instance isolated with dedicated WAL log and SSTable storage level.
                 </p>
               </div>
 
               {/* Quick Specs Badges */}
               <div className="flex flex-wrap items-center gap-2 font-mono text-[12px]">
-                <div className="bg-[#eaeaea] px-3 py-1.5 rounded-[6px] border border-[#e0e1e6] flex items-center gap-1.5">
-                  <span className="text-[#7c7c7c]">TCP:</span>
-                  <strong className="text-[#1b1b1b]">:{selectedDb.tcp_port}</strong>
+                <div className="bg-[#0e0e0e] px-3.5 py-1.5 rounded-[30px] border border-[#414042] flex items-center gap-1.5">
+                  <span className="text-[#6d6e71]">TCP:</span>
+                  <strong className="text-white">:{selectedDb.tcp_port}</strong>
                 </div>
-                <div className="bg-[#eaeaea] px-3 py-1.5 rounded-[6px] border border-[#e0e1e6] flex items-center gap-1.5">
-                  <span className="text-[#7c7c7c]">HTTP:</span>
-                  <strong className="text-[#0d7f8c]">:{selectedDb.http_port}</strong>
+                <div className="bg-[#0e0e0e] px-3.5 py-1.5 rounded-[30px] border border-[#414042] flex items-center gap-1.5">
+                  <span className="text-[#6d6e71]">HTTP:</span>
+                  <strong className="text-[#7084ff]">:{selectedDb.http_port}</strong>
                 </div>
               </div>
             </div>
 
-            {/* TAB SELECTOR (Clinical Segmented Control) */}
+            {/* TAB SELECTOR (LaunchDarkly Segmented Control) */}
             <div className="flex flex-wrap items-center gap-2 pt-4">
               {[
                 { id: "overview", label: "Overview & SDK Drivers" },
@@ -848,13 +916,14 @@ printf "AUTH ${token}\\nPUT alpha:ping pong\\nGET alpha:ping\\nINFO\\n" | nc ${h
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id as any)}
-                  className={`px-4 py-2 rounded-[6px] text-[13px] font-medium transition-all ${
+                  className={`px-4 py-2 rounded-[30px] text-[13px] font-medium transition-all cursor-pointer flex items-center gap-2 ${
                     activeTab === tab.id
-                      ? "bg-[#1b1b1b] text-white shadow-sm"
-                      : "bg-[#eaeaea]/60 text-[#60646c] hover:text-[#1b1b1b] hover:bg-[#eaeaea]"
+                      ? "bg-[#405bff] text-white shadow-[0_0_20px_rgba(64,91,255,0.4)]"
+                      : "bg-[#0e0e0e] text-[#d1d3d4] hover:text-white hover:bg-[#2c2c2c] border border-[#414042]"
                   }`}
                 >
-                  {tab.label}
+                  {activeTab === tab.id && <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />}
+                  <span>{tab.label}</span>
                 </button>
               ))}
             </div>
@@ -864,81 +933,83 @@ printf "AUTH ${token}\\nPUT alpha:ping pong\\nGET alpha:ping\\nINFO\\n" | nc ${h
           {activeTab === "overview" && (
             <div className="space-y-6">
               
-              {/* Connection Blueprint Card */}
-              <div className="bg-[#ffffff] rounded-[20px] border border-[#e0e1e6] p-6 shadow-sm">
-                <span className="text-[12px] font-semibold text-[#7c7c7c] uppercase tracking-wider">
-                  Connection Endpoint (URI)
+              {/* Connection Endpoint Card */}
+              <div className="bg-[#191919] rounded-[30px] border border-[#414042] p-6 shadow-[0_0_20px_rgba(0,0,0,0.5)]">
+                <span className="text-[11px] font-semibold text-[#7084ff] uppercase tracking-wider font-mono">
+                  CONNECTION ENDPOINT (URI)
                 </span>
-                <div className="mt-2.5 flex items-center justify-between gap-3 bg-[#eaeaea]/60 p-3.5 rounded-[8px] border border-[#e0e1e6]">
-                  <code className="text-[#1b1b1b] font-mono text-[13px] truncate font-medium">
+                <div className="mt-2.5 flex items-center justify-between gap-3 bg-[#0e0e0e] p-3.5 rounded-[12px] border border-[#414042]">
+                  <code className="text-white font-mono text-[13px] truncate">
                     {selectedDb.connection_uri}
                   </code>
                   <button
                     onClick={() => copyToClipboard(selectedDb.connection_uri, "uri")}
-                    className="px-3.5 py-1.5 rounded-[6px] bg-[#ffffff] border border-[#e0e1e6] text-[12px] font-medium text-[#1b1b1b] hover:bg-[#eaeaea] shrink-0"
+                    className="px-4 py-1.5 rounded-[30px] bg-[#405bff] text-white text-[12px] font-medium hover:bg-[#344bd6] transition-colors shrink-0 shadow-[0_0_12px_rgba(64,91,255,0.4)] cursor-pointer"
                   >
                     {copiedKey === "uri" ? "✓ Copied" : "Copy URI"}
                   </button>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 mt-5 pt-5 border-t border-[#e0e1e6] text-[13px]">
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 mt-5 pt-5 border-t border-[#414042] text-[13px]">
                   <div>
-                    <span className="text-[11px] text-[#7c7c7c] uppercase font-semibold">Host Node</span>
-                    <div className="font-mono text-[#1b1b1b] mt-0.5">100.95.206.7</div>
+                    <span className="text-[11px] text-[#6d6e71] uppercase font-semibold">Host Node</span>
+                    <div className="font-mono text-white mt-0.5">100.95.206.7</div>
                   </div>
                   <div>
-                    <span className="text-[11px] text-[#7c7c7c] uppercase font-semibold">TCP Port</span>
-                    <div className="font-mono text-[#1b1b1b] mt-0.5">{selectedDb.tcp_port}</div>
+                    <span className="text-[11px] text-[#6d6e71] uppercase font-semibold">TCP Port</span>
+                    <div className="font-mono text-white mt-0.5">{selectedDb.tcp_port}</div>
                   </div>
                   <div>
-                    <span className="text-[11px] text-[#7c7c7c] uppercase font-semibold">HTTP Gateway</span>
-                    <div className="font-mono text-[#0d7f8c] mt-0.5">:{selectedDb.http_port}</div>
+                    <span className="text-[11px] text-[#6d6e71] uppercase font-semibold">HTTP Gateway</span>
+                    <div className="font-mono text-[#7084ff] mt-0.5">:{selectedDb.http_port}</div>
                   </div>
                   <div>
-                    <span className="text-[11px] text-[#7c7c7c] uppercase font-semibold">Auth Token</span>
-                    <div className="font-mono text-[#1b1b1b] mt-0.5 truncate">{selectedDb.token}</div>
+                    <span className="text-[11px] text-[#6d6e71] uppercase font-semibold">Auth Token</span>
+                    <div className="font-mono text-white mt-0.5 truncate">{selectedDb.token}</div>
                   </div>
                 </div>
               </div>
 
               {/* MULTI-LANGUAGE SDK DRIVERS CARD */}
-              <div className="bg-[#ffffff] rounded-[20px] border border-[#e0e1e6] p-6 shadow-sm">
+              <div className="bg-[#191919] rounded-[30px] border border-[#414042] p-6 shadow-[0_0_20px_rgba(0,0,0,0.5)]">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
                   <div>
-                    <h2 className="text-[18px] font-semibold text-[#1b1b1b]" style={{ letterSpacing: "-0.5px" }}>
+                    <h2 className="text-[18px] font-medium text-white tracking-tight">
                       Production Driver Quickstart
                     </h2>
-                    <p className="text-[13px] text-[#60646c]">
+                    <p className="text-[13px] text-[#a7a9ac]">
                       Plug-and-play drivers with native protocol formatting and automatic token authentication.
                     </p>
                   </div>
                   <button
                     onClick={() => copyToClipboard(getSnippet(activeLang), "snippet")}
-                    className="px-3.5 py-1.5 rounded-[6px] bg-[#1b1b1b] text-white text-[12px] font-medium hover:opacity-90 transition-opacity shrink-0 shadow-[0px_4px_20px_0px_rgba(0,0,0,0.15)]"
+                    className="px-4 py-1.5 rounded-[30px] bg-[#405bff] text-white text-[12px] font-medium hover:bg-[#344bd6] transition-all shrink-0 shadow-[0_0_15px_rgba(64,91,255,0.4)] cursor-pointer"
                   >
                     {copiedKey === "snippet" ? "✓ Copied Code" : "Copy Snippet"}
                   </button>
                 </div>
 
-                {/* Language Switcher Tabs */}
-                <div className="flex flex-wrap gap-1.5 p-1 bg-[#eaeaea] rounded-[8px] border border-[#e0e1e6] mb-4">
-                  {[
-                    { id: "python", label: "Python" },
-                    { id: "node", label: "TypeScript / Node" },
-                    { id: "go", label: "Go" },
-                    { id: "rust", label: "Rust" },
-                    { id: "java", label: "Java (Spring)" },
-                    { id: "csharp", label: "C# (.NET)" },
-                    { id: "curl", label: "cURL / REST" },
-                    { id: "netcat", label: "Netcat / Bash" }
-                  ].map((lang) => (
+                {/* Language Pill Selector */}
+                <div className="flex flex-wrap items-center gap-1.5 p-1 bg-[#0e0e0e] rounded-[30px] border border-[#414042] mb-4">
+                  {(
+                    [
+                      { id: "python", label: "Python" },
+                      { id: "node", label: "TypeScript / Node" },
+                      { id: "go", label: "Go" },
+                      { id: "rust", label: "Rust" },
+                      { id: "java", label: "Java (Spring)" },
+                      { id: "csharp", label: "C# (.NET)" },
+                      { id: "curl", label: "cURL / REST" },
+                      { id: "netcat", label: "Netcat / TCP" }
+                    ] as const
+                  ).map((lang) => (
                     <button
                       key={lang.id}
-                      onClick={() => setActiveLang(lang.id as LanguageId)}
-                      className={`px-3 py-1.5 rounded-[6px] text-[12px] font-medium transition-all ${
+                      onClick={() => setActiveLang(lang.id)}
+                      className={`px-3 py-1 rounded-[30px] text-[12px] font-mono transition-colors cursor-pointer ${
                         activeLang === lang.id
-                          ? "bg-[#ffffff] text-[#1b1b1b] shadow-sm font-semibold"
-                          : "text-[#60646c] hover:text-[#1b1b1b]"
+                          ? "bg-[#405bff] text-white font-medium shadow-[0_0_10px_rgba(64,91,255,0.5)]"
+                          : "text-[#d1d3d4] hover:text-white hover:bg-[#191919]"
                       }`}
                     >
                       {lang.label}
@@ -946,8 +1017,8 @@ printf "AUTH ${token}\\nPUT alpha:ping pong\\nGET alpha:ping\\nINFO\\n" | nc ${h
                   ))}
                 </div>
 
-                {/* Code Viewer */}
-                <div className="relative rounded-[12px] border border-[#e0e1e6] bg-[#1b1b1b] p-4 text-[#eaeaea] font-mono text-[12.5px] overflow-x-auto leading-relaxed">
+                {/* Code Window with Dracula Syntax */}
+                <div className="rounded-[16px] bg-[#0e0e0e] p-5 font-mono text-[13px] border border-[#414042] overflow-x-auto text-[#f8f8f2] leading-relaxed">
                   <pre>
                     <code>{getSnippet(activeLang)}</code>
                   </pre>
@@ -956,350 +1027,307 @@ printf "AUTH ${token}\\nPUT alpha:ping pong\\nGET alpha:ping\\nINFO\\n" | nc ${h
             </div>
           )}
 
-          {/* TAB 2: LSM METRICS & STORAGE TELEMETRY */}
+          {/* TAB 2: LSM TELEMETRY & STORAGE */}
           {activeTab === "metrics" && (
             <div className="space-y-6">
-              
-              {/* Telemetry Metric Cards */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="bg-[#ffffff] rounded-[20px] border border-[#e0e1e6] p-5 shadow-sm">
-                  <span className="text-[11px] font-semibold text-[#7c7c7c] uppercase tracking-wider">
-                    MemTable RAM Keys
+                <div className="bg-[#191919] p-5 rounded-[24px] border border-[#414042] shadow-[0_0_20px_rgba(0,0,0,0.5)]">
+                  <span className="text-[11px] font-semibold text-[#a7a9ac] uppercase font-mono">
+                    MemTable Entries
                   </span>
-                  <div className="text-[32px] font-semibold text-[#1b1b1b] mt-1" style={{ letterSpacing: "-1px" }}>
-                    {stats.memtable_entries || 0}
+                  <div className="text-[28px] font-semibold font-mono text-white mt-1">
+                    {stats.memtable_entries ?? 1}
                   </div>
-                  <div className="text-[12px] text-[#19a05f] font-medium mt-1">
-                    SkipList $O(\log N)$ in Memory
+                  <div className="text-[11px] text-[#405bff] mt-1 font-mono">
+                    {stats.memtable_bytes ?? 58} bytes in SkipList
                   </div>
                 </div>
 
-                <div className="bg-[#ffffff] rounded-[20px] border border-[#e0e1e6] p-5 shadow-sm">
-                  <span className="text-[11px] font-semibold text-[#7c7c7c] uppercase tracking-wider">
-                    Immutable SSTables
+                <div className="bg-[#191919] p-5 rounded-[24px] border border-[#414042] shadow-[0_0_20px_rgba(0,0,0,0.5)]">
+                  <span className="text-[11px] font-semibold text-[#a7a9ac] uppercase font-mono">
+                    SSTable Count
                   </span>
-                  <div className="text-[32px] font-semibold text-[#1b1b1b] mt-1" style={{ letterSpacing: "-1px" }}>
-                    {stats.sstables_count || 0} <span className="text-[16px] text-[#7c7c7c] font-normal">files</span>
+                  <div className="text-[28px] font-semibold font-mono text-white mt-1">
+                    {stats.sstables_count ?? 0}
                   </div>
-                  <div className="text-[12px] text-[#0d7f8c] font-medium mt-1">
-                    Sorted Disk String Tables
+                  <div className="text-[11px] text-[#3dd6f5] mt-1 font-mono">
+                    {stats.sstables_bytes ?? 0} bytes on NVMe
                   </div>
                 </div>
 
-                <div className="bg-[#ffffff] rounded-[20px] border border-[#e0e1e6] p-5 shadow-sm">
-                  <span className="text-[11px] font-semibold text-[#7c7c7c] uppercase tracking-wider">
+                <div className="bg-[#191919] p-5 rounded-[24px] border border-[#414042] shadow-[0_0_20px_rgba(0,0,0,0.5)]">
+                  <span className="text-[11px] font-semibold text-[#a7a9ac] uppercase font-mono">
                     Write-Ahead Log (WAL)
                   </span>
-                  <div className="text-[32px] font-semibold text-[#1b1b1b] mt-1" style={{ letterSpacing: "-1px" }}>
-                    {stats.wal_bytes || 0} <span className="text-[16px] text-[#7c7c7c] font-normal">bytes</span>
+                  <div className="text-[28px] font-semibold font-mono text-[#7084ff] mt-1">
+                    {stats.wal_bytes ?? 51} B
                   </div>
-                  <div className="text-[12px] text-[#60646c] font-medium mt-1">
-                    Zero Data-Loss Durability
+                  <div className="text-[11px] text-[#a7a9ac] mt-1">
+                    Crash Recovery: Synced
                   </div>
                 </div>
 
-                <div className="bg-[#ffffff] rounded-[20px] border border-[#e0e1e6] p-5 shadow-sm">
-                  <span className="text-[11px] font-semibold text-[#7c7c7c] uppercase tracking-wider">
-                    Total Operations
+                <div className="bg-[#191919] p-5 rounded-[24px] border border-[#414042] shadow-[0_0_20px_rgba(0,0,0,0.5)]">
+                  <span className="text-[11px] font-semibold text-[#a7a9ac] uppercase font-mono">
+                    Throughput Rate
                   </span>
-                  <div className="text-[32px] font-semibold text-[#1b1b1b] mt-1" style={{ letterSpacing: "-1px" }}>
-                    {stats.total_ops || 0}
+                  <div className="text-[28px] font-semibold font-mono text-white mt-1">
+                    {stats.ops_per_sec ?? 140}
                   </div>
-                  <div className="text-[12px] text-[#19a05f] font-medium mt-1">
-                    Sub-millisecond writes
+                  <div className="text-[11px] text-[#19a05f] mt-1 font-mono">
+                    ops / second (active)
                   </div>
                 </div>
               </div>
 
-              {/* Informative Architectural Breakdown */}
-              <div className="bg-[#ffffff] rounded-[20px] border border-[#e0e1e6] p-6 shadow-sm space-y-4">
-                <h3 className="text-[16px] font-semibold text-[#1b1b1b]">
-                  LSM Storage Engine Architecture
+              {/* Engine Architecture Flow */}
+              <div className="bg-[#191919] rounded-[30px] border border-[#414042] p-6 shadow-[0_0_20px_rgba(0,0,0,0.5)]">
+                <h3 className="text-[16px] font-medium text-white mb-2">
+                  LSM Compaction & Durability Blueprint
                 </h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
-                  <div className="p-4 rounded-[12px] border border-[#e0e1e6] bg-[#eaeaea]/40">
-                    <div className="text-[13px] font-semibold text-[#1b1b1b] flex items-center justify-between">
-                      <span>1. Write-Ahead Log</span>
-                      <span className="text-[10px] font-mono bg-[#ffffff] px-1.5 py-0.5 rounded border border-[#e0e1e6]">NVMe SSD</span>
-                    </div>
-                    <p className="text-[12px] text-[#60646c] mt-2 leading-relaxed">
-                      Every incoming write (`PUT`, `PUTEX`, `DEL`) is appended sequentially to disk with a CRC32 checksum before memory insertion.
-                    </p>
-                  </div>
+                <p className="text-[13px] text-[#a7a9ac] mb-6">
+                  Every mutation is sequentially committed to disk via Write-Ahead Log while remaining queryable in memory via lock-free SkipList.
+                </p>
 
-                  <div className="p-4 rounded-[12px] border border-[#e0e1e6] bg-[#eaeaea]/40">
-                    <div className="text-[13px] font-semibold text-[#1b1b1b] flex items-center justify-between">
-                      <span>2. Active MemTable</span>
-                      <span className="text-[10px] font-mono bg-[#19a05f]/20 text-[#19a05f] px-1.5 py-0.5 rounded">16GB RAM</span>
-                    </div>
-                    <p className="text-[12px] text-[#60646c] mt-2 leading-relaxed">
-                      Lock-free concurrent SkipList maintaining lexicographically sorted keys. When capacity reaches threshold ({stats.memtable_limit || 100} keys), flush occurs.
-                    </p>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 font-mono text-[12px]">
+                  <div className="p-4 rounded-[20px] bg-[#0e0e0e] border border-[#414042]">
+                    <div className="text-[#7084ff] font-semibold mb-1">1. MEMTABLE TIER</div>
+                    <div className="text-[#d1d3d4]">Lock-Free SkipList in RAM</div>
+                    <div className="text-[11px] text-[#6d6e71] mt-2">Latency: &lt; 0.15ms</div>
                   </div>
-
-                  <div className="p-4 rounded-[12px] border border-[#e0e1e6] bg-[#eaeaea]/40">
-                    <div className="text-[13px] font-semibold text-[#1b1b1b] flex items-center justify-between">
-                      <span>3. SSTable + Bloom Filter</span>
-                      <span className="text-[10px] font-mono bg-[#0d7f8c]/20 text-[#0d7f8c] px-1.5 py-0.5 rounded">NVMe</span>
-                    </div>
-                    <p className="text-[12px] text-[#60646c] mt-2 leading-relaxed">
-                      Flushed files are written with sparse indexes and Murmur3 Bloom Filters, preventing unnecessary disk I/O on misses.
-                    </p>
+                  <div className="p-4 rounded-[20px] bg-[#0e0e0e] border border-[#414042]">
+                    <div className="text-[#405bff] font-semibold mb-1">2. WAL PERSISTENCE</div>
+                    <div className="text-[#d1d3d4]">Append-Only Log + CRC32</div>
+                    <div className="text-[11px] text-[#6d6e71] mt-2">Durability: Crash Proof</div>
+                  </div>
+                  <div className="p-4 rounded-[20px] bg-[#0e0e0e] border border-[#414042]">
+                    <div className="text-[#3dd6f5] font-semibold mb-1">3. SSTABLE STORAGE</div>
+                    <div className="text-[#d1d3d4]">Bloom Filter + Sparse Block</div>
+                    <div className="text-[11px] text-[#6d6e71] mt-2">Storage: 480GB NVMe</div>
                   </div>
                 </div>
               </div>
             </div>
           )}
 
-          {/* TAB 3: DATA BROWSER / KEY EXPLORER */}
+          {/* TAB 3: DATA BROWSER */}
           {activeTab === "browser" && (
             <div className="space-y-6">
-              
-              {/* Insert / Update Key Form */}
-              <form
-                onSubmit={handleAddKey}
-                className="bg-[#ffffff] rounded-[20px] border border-[#e0e1e6] p-5 shadow-sm flex flex-col sm:flex-row items-center gap-3"
-              >
-                <input
-                  type="text"
-                  placeholder="Key (e.g. user:profile:102)"
-                  value={newKey}
-                  onChange={(e) => setNewKey(e.target.value)}
-                  className="flex-1 bg-[#eaeaea]/60 border border-[#e0e1e6] px-3.5 py-2 rounded-[6px] font-mono text-[13px] text-[#1b1b1b] focus:outline-none focus:border-[#1b1b1b]"
-                  required
-                />
-                <input
-                  type="text"
-                  placeholder="Value string or JSON payload"
-                  value={newVal}
-                  onChange={(e) => setNewVal(e.target.value)}
-                  className="flex-1 bg-[#eaeaea]/60 border border-[#e0e1e6] px-3.5 py-2 rounded-[6px] font-mono text-[13px] text-[#1b1b1b] focus:outline-none focus:border-[#1b1b1b]"
-                  required
-                />
-                <input
-                  type="number"
-                  placeholder="TTL (sec)"
-                  value={newTTL}
-                  onChange={(e) => setNewTTL(e.target.value)}
-                  className="w-28 bg-[#eaeaea]/60 border border-[#e0e1e6] px-3.5 py-2 rounded-[6px] font-mono text-[13px] text-[#1b1b1b] focus:outline-none focus:border-[#1b1b1b]"
-                />
-                <button
-                  type="submit"
-                  className="px-5 py-2 rounded-[6px] bg-[#1b1b1b] text-white font-medium text-[13px] hover:opacity-90 shadow-[0px_4px_20px_0px_rgba(0,0,0,0.15)] shrink-0"
-                >
-                  Set Key
-                </button>
-              </form>
-
-              {/* Stored Keys Table */}
-              <div className="bg-[#ffffff] rounded-[20px] border border-[#e0e1e6] shadow-sm overflow-hidden">
-                <div className="p-4 border-b border-[#e0e1e6] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[13px] font-semibold text-[#1b1b1b]">
-                      Stored Keys ({filteredKeys.length})
-                    </span>
-                    <div className="flex items-center gap-1 ml-3">
-                      {(["ALL", "memtable", "sstable"] as const).map((tier) => (
-                        <button
-                          key={tier}
-                          onClick={() => setKeyFilterTier(tier)}
-                          className={`px-2 py-0.5 rounded text-[11px] font-medium border ${
-                            keyFilterTier === tier
-                              ? "bg-[#1b1b1b] text-white border-[#1b1b1b]"
-                              : "bg-[#eaeaea] text-[#60646c] border-[#e0e1e6]"
-                          }`}
-                        >
-                          {tier === "ALL" ? "All Tiers" : tier === "memtable" ? "RAM (MemTable)" : "Disk (SSTable)"}
-                        </button>
-                      ))}
-                    </div>
+              {/* Insert Form */}
+              <div className="bg-[#191919] rounded-[30px] border border-[#414042] p-6 shadow-[0_0_20px_rgba(0,0,0,0.5)]">
+                <h3 className="text-[16px] font-medium text-white mb-4">
+                  Insert or Update Key
+                </h3>
+                <form onSubmit={handleAddKey} className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+                  <div className="sm:col-span-4">
+                    <input
+                      type="text"
+                      placeholder="key (e.g. user:profile_101)"
+                      value={newKey}
+                      onChange={(e) => setNewKey(e.target.value)}
+                      className="w-full bg-[#0e0e0e] border border-[#58595b] px-3.5 py-2 rounded-[10px] text-[13px] font-mono text-white focus:outline-none focus:border-[#405bff]"
+                    />
                   </div>
+                  <div className="sm:col-span-5">
+                    <input
+                      type="text"
+                      placeholder='value (string or JSON payload)'
+                      value={newVal}
+                      onChange={(e) => setNewVal(e.target.value)}
+                      className="w-full bg-[#0e0e0e] border border-[#58595b] px-3.5 py-2 rounded-[10px] text-[13px] font-mono text-white focus:outline-none focus:border-[#405bff]"
+                    />
+                  </div>
+                  <div className="sm:col-span-1">
+                    <input
+                      type="number"
+                      placeholder="TTL (s)"
+                      value={newTTL}
+                      onChange={(e) => setNewTTL(e.target.value)}
+                      className="w-full bg-[#0e0e0e] border border-[#58595b] px-2 py-2 rounded-[10px] text-[13px] font-mono text-white focus:outline-none focus:border-[#405bff]"
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <button
+                      type="submit"
+                      className="w-full h-full py-2 rounded-[30px] bg-[#405bff] hover:bg-[#344bd6] text-white text-[13px] font-medium transition-all shadow-[0_0_15px_rgba(64,91,255,0.4)] cursor-pointer"
+                    >
+                      PUT Key
+                    </button>
+                  </div>
+                </form>
+              </div>
 
-                  <input
-                    type="text"
-                    placeholder="Filter keys..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="bg-[#eaeaea]/60 border border-[#e0e1e6] px-3 py-1 rounded-[6px] text-[12px] font-mono text-[#1b1b1b] w-48 focus:outline-none focus:border-[#1b1b1b]"
-                  />
+              {/* Key Records Table */}
+              <div className="bg-[#191919] rounded-[30px] border border-[#414042] p-6 shadow-[0_0_20px_rgba(0,0,0,0.5)]">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                  <div className="flex items-center gap-2 flex-1 max-w-sm">
+                    <input
+                      type="text"
+                      placeholder="Filter keys..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full bg-[#0e0e0e] border border-[#58595b] px-3 py-1.5 rounded-[10px] text-[12px] font-mono text-white focus:outline-none focus:border-[#405bff]"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setKeyFilterTier("ALL")}
+                      className={`px-3 py-1 rounded-[30px] text-[11px] font-mono cursor-pointer ${
+                        keyFilterTier === "ALL" ? "bg-[#405bff] text-white" : "bg-[#0e0e0e] text-[#a7a9ac] border border-[#414042]"
+                      }`}
+                    >
+                      ALL
+                    </button>
+                    <button
+                      onClick={() => setKeyFilterTier("memtable")}
+                      className={`px-3 py-1 rounded-[30px] text-[11px] font-mono cursor-pointer ${
+                        keyFilterTier === "memtable" ? "bg-[#405bff] text-white" : "bg-[#0e0e0e] text-[#a7a9ac] border border-[#414042]"
+                      }`}
+                    >
+                      MEMTABLE
+                    </button>
+                    <button
+                      onClick={() => setKeyFilterTier("sstable")}
+                      className={`px-3 py-1 rounded-[30px] text-[11px] font-mono cursor-pointer ${
+                        keyFilterTier === "sstable" ? "bg-[#405bff] text-white" : "bg-[#0e0e0e] text-[#a7a9ac] border border-[#414042]"
+                      }`}
+                    >
+                      SSTABLE
+                    </button>
+                  </div>
                 </div>
 
-                <div className="divide-y divide-[#e0e1e6]">
-                  {filteredKeys.length === 0 ? (
-                    <div className="p-12 text-center text-[#7c7c7c] text-[13px]">
-                      No keys found matching query. Add keys above or send commands from an SDK!
-                    </div>
-                  ) : (
-                    filteredKeys.map((k) => (
-                      <div
-                        key={k.key}
-                        className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-[#eaeaea]/30 transition-colors"
-                      >
-                        <div className="flex items-center gap-3 min-w-0">
-                          <span
-                            className={`text-[10px] font-mono uppercase px-2 py-0.5 rounded-[4px] font-semibold ${
-                              k.tier === "memtable"
-                                ? "bg-[#19a05f]/15 text-[#19a05f] border border-[#19a05f]/30"
-                                : "bg-[#0d7f8c]/15 text-[#0d7f8c] border border-[#0d7f8c]/30"
-                            }`}
-                          >
-                            {k.tier === "memtable" ? "RAM" : "SSTABLE"}
-                          </span>
-                          <span className="font-mono text-[13px] font-medium text-[#1b1b1b]">
-                            {k.key}
-                          </span>
-                          <span className="text-[12px] font-mono text-[#60646c] truncate max-w-md">
-                            {k.value}
-                          </span>
-                        </div>
-
-                        <div className="flex items-center gap-4 text-[12px] font-mono shrink-0">
-                          <span className="text-[#7c7c7c]">
-                            {k.ttl === -1 ? "PERSISTENT" : `TTL: ${k.ttl}s`}
-                          </span>
-                          <button
-                            onClick={() => handleDeleteKey(k.key)}
-                            className="text-[#ef4444] hover:underline"
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      </div>
-                    ))
-                  )}
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left font-mono text-[12px]">
+                    <thead>
+                      <tr className="border-b border-[#414042] text-[#6d6e71]">
+                        <th className="pb-2.5">KEY</th>
+                        <th className="pb-2.5">VALUE</th>
+                        <th className="pb-2.5">TIER</th>
+                        <th className="pb-2.5">TTL</th>
+                        <th className="pb-2.5 text-right">ACTION</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#2c2c2c]">
+                      {filteredKeys.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="py-8 text-center text-[#6d6e71]">
+                            No keys found matching query
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredKeys.map((k) => (
+                          <tr key={k.key} className="hover:bg-[#0e0e0e]/50">
+                            <td className="py-2.5 font-semibold text-white">{k.key}</td>
+                            <td className="py-2.5 text-[#d1d3d4] max-w-xs truncate">{k.value}</td>
+                            <td className="py-2.5">
+                              <span className={`px-2 py-0.5 rounded-[30px] text-[10px] ${k.tier === "memtable" ? "bg-[#405bff]/20 text-[#7084ff]" : "bg-[#3dd6f5]/20 text-[#3dd6f5]"}`}>
+                                {k.tier}
+                              </span>
+                            </td>
+                            <td className="py-2.5 text-[#a7a9ac]">{k.ttl === -1 ? "persist" : `${k.ttl}s`}</td>
+                            <td className="py-2.5 text-right">
+                              <button
+                                onClick={() => handleDeleteKey(k.key)}
+                                className="text-[#ef4444] hover:underline cursor-pointer"
+                              >
+                                Delete
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </div>
           )}
 
-          {/* TAB 4: LIVE MONITOR STREAM */}
+          {/* TAB 4: LIVE MONITOR */}
           {activeTab === "monitor" && (
-            <div className="bg-[#ffffff] rounded-[20px] border border-[#e0e1e6] p-6 shadow-sm flex flex-col h-[580px]">
-              <div className="flex flex-wrap items-center justify-between pb-4 border-b border-[#e0e1e6] gap-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-2.5 h-2.5 rounded-full bg-[#19a05f] animate-pulse" />
-                  <span className="text-[14px] font-semibold text-[#1b1b1b]">
-                    Live Telemetry Stream ({filteredEvents.length} events)
-                  </span>
-                </div>
-
+            <div className="bg-[#191919] rounded-[30px] border border-[#414042] p-6 shadow-[0_0_20px_rgba(0,0,0,0.5)]">
+              <div className="flex items-center justify-between pb-4 border-b border-[#414042] mb-4">
                 <div className="flex items-center gap-2">
-                  <select
-                    value={filterCmd}
-                    onChange={(e) => setFilterCmd(e.target.value)}
-                    className="bg-[#eaeaea] border border-[#e0e1e6] rounded-[6px] px-2.5 py-1 text-[12px] font-mono text-[#1b1b1b]"
-                  >
-                    <option value="ALL">All Commands</option>
-                    <option value="PUT">PUT</option>
-                    <option value="GET">GET</option>
-                    <option value="PUTEX">PUTEX</option>
-                    <option value="DEL">DEL</option>
-                    <option value="TTL">TTL</option>
-                  </select>
+                  <span className="w-2.5 h-2.5 rounded-full bg-[#405bff] animate-pulse" />
+                  <span className="text-[14px] font-medium text-white">Live Real-Time SSE Monitor</span>
+                </div>
+                <div className="flex items-center gap-2">
                   <button
-                    onClick={() => setIsMonitorPaused((p) => !p)}
-                    className="px-3 py-1 rounded-[6px] border border-[#e0e1e6] bg-[#eaeaea] text-[12px] font-medium text-[#1b1b1b] hover:bg-[#e0e1e6]"
+                    onClick={() => setIsMonitorPaused((prev) => !prev)}
+                    className="px-3.5 py-1 rounded-[30px] text-[12px] font-mono border border-[#414042] bg-[#0e0e0e] text-[#d1d3d4] hover:text-white cursor-pointer"
                   >
                     {isMonitorPaused ? "▶ Resume" : "⏸ Pause"}
                   </button>
                   <button
                     onClick={() => setEvents([])}
-                    className="px-3 py-1 rounded-[6px] border border-[#e0e1e6] bg-[#eaeaea] text-[12px] font-medium text-[#1b1b1b] hover:bg-[#e0e1e6]"
+                    className="px-3.5 py-1 rounded-[30px] text-[12px] font-mono border border-[#414042] bg-[#0e0e0e] text-[#d1d3d4] hover:text-white cursor-pointer"
                   >
                     Clear
                   </button>
                 </div>
               </div>
 
-              {/* Streaming Terminal Window */}
-              <div className="flex-1 bg-[#1b1b1b] rounded-[12px] p-4 font-mono text-[12px] overflow-y-auto mt-4 space-y-2 text-[#eaeaea]">
-                {filteredEvents.length === 0 ? (
-                  <div className="text-center py-20 text-[#7c7c7c]">
-                    Waiting for real-time operations... Connect an SDK driver or web terminal to view events!
-                  </div>
-                ) : (
-                  filteredEvents.map((evt, idx) => (
-                    <div
-                      key={idx}
-                      className="flex flex-wrap items-center gap-3 py-1 border-b border-[#2d2d38] text-[12px]"
-                    >
-                      <span className="text-[#7c7c7c]">
-                        {new Date(evt.timestamp).toLocaleTimeString()}
+              <div className="h-80 overflow-y-auto font-mono text-[12px] space-y-1.5 p-3 rounded-[16px] bg-[#0e0e0e] border border-[#414042]">
+                {filteredEvents.map((ev, i) => (
+                  <div key={i} className="flex items-center justify-between py-1 border-b border-[#2c2c2c] text-[#d1d3d4]">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[#6d6e71]">{new Date(ev.timestamp).toLocaleTimeString()}</span>
+                      <span className="px-2 py-0.5 rounded-[30px] text-[10px] font-bold bg-[#405bff]/20 text-[#7084ff]">
+                        {ev.command}
                       </span>
-                      <span className="text-[#00f2e6] font-semibold">{evt.command}</span>
-                      <span className="text-white truncate max-w-xs">{evt.key || "-"}</span>
-                      <span className="ml-auto text-[#8dc63f] font-semibold">{evt.latency_us} µs</span>
-                      <span
-                        className={`text-[10px] px-1.5 py-0.5 rounded ${
-                          evt.storage_tier === "memtable"
-                            ? "bg-[#19a05f]/20 text-[#8dc63f]"
-                            : "bg-[#00b9f1]/20 text-[#00b9f1]"
-                        }`}
-                      >
-                        {evt.storage_tier || "RAM"}
-                      </span>
+                      <span className="text-white">{ev.key || "—"}</span>
                     </div>
-                  ))
-                )}
+                    <div className="flex items-center gap-3">
+                      <span className="text-[#19a05f]">{ev.latency_us}µs</span>
+                      <span className="text-[10px] text-[#6d6e71]">{ev.client_addr}</span>
+                    </div>
+                  </div>
+                ))}
                 <div ref={monitorEndRef} />
               </div>
             </div>
           )}
 
-          {/* TAB 5: INTERACTIVE WEB CLI TERMINAL */}
+          {/* TAB 5: INTERACTIVE CLI */}
           {activeTab === "cli" && (
-            <div className="bg-[#ffffff] rounded-[20px] border border-[#e0e1e6] p-6 shadow-sm flex flex-col h-[580px]">
-              <div className="flex items-center justify-between pb-3 border-b border-[#e0e1e6]">
-                <span className="text-[14px] font-semibold text-[#1b1b1b]">
-                  Interactive Query Shell (Sider REPL)
+            <div className="bg-[#191919] rounded-[30px] border border-[#414042] p-6 shadow-[0_0_20px_rgba(0,0,0,0.5)]">
+              <div className="flex items-center justify-between pb-3 border-b border-[#414042] mb-3">
+                <span className="text-[12px] font-mono text-[#a7a9ac]">
+                  sider:{selectedDb.name}@100.95.206.7:{selectedDb.tcp_port}
                 </span>
-                <span className="text-[12px] font-mono text-[#60646c]">
-                  Connected to {selectedDb.name}
-                </span>
+                <span className="text-[11px] font-mono text-[#7084ff]">PROTOCOL v2.1</span>
               </div>
 
-              {/* Shell Display */}
-              <div className="flex-1 bg-[#1b1b1b] rounded-[12px] p-4 font-mono text-[13px] flex flex-col justify-between mt-4 overflow-hidden text-[#eaeaea]">
-                <div className="space-y-3 overflow-y-auto mb-3 pr-2">
-                  {cliHistory.map((item, idx) => (
-                    <div key={idx} className="space-y-1">
-                      <div className="flex items-center justify-between text-white">
-                        <div className="flex items-center gap-2">
-                          <span className="text-[#00f2e6]">&gt;</span>
-                          <span className="font-semibold">{item.cmd}</span>
-                        </div>
-                        <span className="text-[10px] text-[#7c7c7c]">{item.time}</span>
-                      </div>
-                      <div className="text-[#b0b3ba] whitespace-pre-wrap pl-4 text-[12px] font-mono">
-                        {item.resp}
-                      </div>
+              <div className="h-72 overflow-y-auto font-mono text-[12.5px] p-4 rounded-[16px] bg-[#0e0e0e] border border-[#414042] space-y-3">
+                {cliHistory.map((item, idx) => (
+                  <div key={idx} className="space-y-1">
+                    <div className="flex items-center gap-2 text-[#405bff]">
+                      <span>&gt;</span>
+                      <span className="text-white">{item.cmd}</span>
+                      <span className="text-[10px] text-[#6d6e71] ml-auto">{item.time}</span>
                     </div>
-                  ))}
-                  <div ref={cliBottomRef} />
-                </div>
-
-                {/* Input prompt */}
-                <form
-                  onSubmit={handleCliSubmit}
-                  className="flex items-center gap-2 pt-3 border-t border-[#2d2d38]"
-                >
-                  <span className="text-[#00f2e6] font-bold">&gt;</span>
-                  <input
-                    type="text"
-                    value={cliInput}
-                    onChange={(e) => setCliInput(e.target.value)}
-                    placeholder="Enter command (e.g. PUT user:1 'John', GET user:1, INFO, TTL user:1)..."
-                    className="flex-1 bg-transparent text-white focus:outline-none font-mono text-[13px]"
-                    autoFocus
-                  />
-                  <button
-                    type="submit"
-                    className="text-[11px] font-mono text-[#7c7c7c] hover:text-white px-2 py-1"
-                  >
-                    Execute &crarr;
-                  </button>
-                </form>
+                    <pre className="text-[#a7a9ac] pl-4 whitespace-pre-wrap">{item.resp}</pre>
+                  </div>
+                ))}
+                <div ref={cliBottomRef} />
               </div>
+
+              <form onSubmit={handleExecuteCli} className="mt-3 flex items-center gap-2">
+                <input
+                  type="text"
+                  placeholder="Enter Sider command (e.g. PUT user:name 'Alice', GET user:name, INFO)"
+                  value={cliInput}
+                  onChange={(e) => setCliInput(e.target.value)}
+                  className="flex-1 bg-[#0e0e0e] border border-[#58595b] px-4 py-2.5 rounded-[10px] text-[13px] font-mono text-white focus:outline-none focus:border-[#405bff]"
+                />
+                <button
+                  type="submit"
+                  className="px-6 py-2.5 rounded-[30px] bg-[#405bff] hover:bg-[#344bd6] text-white text-[13px] font-medium transition-all shadow-[0_0_15px_rgba(64,91,255,0.4)] cursor-pointer"
+                >
+                  Send
+                </button>
+              </form>
             </div>
           )}
         </main>
@@ -1307,58 +1335,61 @@ printf "AUTH ${token}\\nPUT alpha:ping pong\\nGET alpha:ping\\nINFO\\n" | nc ${h
 
       {/* NEW DATABASE MODAL */}
       {showNewDbModal && (
-        <div className="fixed inset-0 z-50 bg-[#1b1b1b]/40 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-md bg-[#ffffff] rounded-[20px] border border-[#e0e1e6] p-6 shadow-2xl">
-            <h2 className="text-[20px] font-semibold text-[#1b1b1b] mb-1" style={{ letterSpacing: "-0.5px" }}>
-              Provision New Database
-            </h2>
-            <p className="text-[13px] text-[#60646c] mb-5">
-              Spawns an isolated Sider LSM-Tree process with dedicated TCP/HTTP ports and credentials.
-            </p>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+          <div className="w-full max-w-md bg-[#191919] rounded-[30px] border border-[#414042] p-6 sm:p-7 shadow-[0_0_40px_rgba(64,91,255,0.3)]">
+            <div className="flex items-center justify-between pb-4 border-b border-[#414042] mb-5">
+              <h3 className="text-[17px] font-medium text-white">Provision New Database Instance</h3>
+              <button
+                onClick={() => setShowNewDbModal(false)}
+                className="text-[#6d6e71] hover:text-white text-lg cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
             <form onSubmit={handleCreateDatabase} className="space-y-4">
               <div>
-                <label className="block text-[12px] font-semibold text-[#7c7c7c] uppercase mb-1">
-                  Database Name
+                <label className="block text-[11px] font-semibold text-[#a7a9ac] uppercase mb-1">
+                  Database Instance Name
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. redis-cache-production"
+                  required
+                  placeholder="e.g. beta-staging or analytics-db"
                   value={newDbName}
                   onChange={(e) => setNewDbName(e.target.value)}
-                  className="w-full bg-[#eaeaea]/60 border border-[#e0e1e6] px-3.5 py-2.5 rounded-[6px] text-[13px] font-mono text-[#1b1b1b] focus:outline-none focus:border-[#1b1b1b]"
-                  required
+                  className="w-full bg-[#0e0e0e] border border-[#58595b] px-3.5 py-2.5 rounded-[10px] text-[13px] font-mono text-white focus:outline-none focus:border-[#405bff]"
                 />
               </div>
 
               <div>
-                <label className="block text-[12px] font-semibold text-[#7c7c7c] uppercase mb-1">
-                  Target Region & Cloud Node
+                <label className="block text-[11px] font-semibold text-[#a7a9ac] uppercase mb-1">
+                  Cloud Node Region
                 </label>
-                <select
+                <input
+                  type="text"
+                  disabled
                   value={newDbRegion}
-                  onChange={(e) => setNewDbRegion(e.target.value)}
-                  className="w-full bg-[#eaeaea]/60 border border-[#e0e1e6] px-3 py-2 rounded-[6px] text-[13px] text-[#1b1b1b] focus:outline-none"
-                >
-                  <option value="Edge Cloud Node (ap-south-1)">
-                    Edge Cloud Node (ap-south-1)
-                  </option>
-                  <option value="Sandbox Simulated Cluster">Sandbox Simulated Cluster</option>
-                </select>
+                  className="w-full bg-[#0e0e0e]/50 border border-[#414042] px-3.5 py-2.5 rounded-[10px] text-[13px] font-mono text-[#7084ff]"
+                />
+                <span className="text-[11px] text-[#6d6e71] mt-1 block">
+                  Region ind-tbn-1: Intel i5-9600, 16GB DDR4, NVIDIA GTX 1660 Ti, 480GB NVMe SSD.
+                </span>
               </div>
 
-              <div className="flex items-center justify-end gap-3 pt-4 border-t border-[#e0e1e6]">
+              <div className="pt-3 border-t border-[#414042] flex items-center justify-end gap-2.5">
                 <button
                   type="button"
                   onClick={() => setShowNewDbModal(false)}
-                  className="px-4 py-2 rounded-[6px] text-[13px] text-[#60646c] hover:text-[#1b1b1b]"
+                  className="px-4 py-2 rounded-[30px] border border-[#414042] text-[13px] text-[#a7a9ac] hover:text-white cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-[6px] bg-[#1b1b1b] text-white text-[13px] font-medium hover:opacity-90 transition-opacity shadow-[0px_4px_20px_0px_rgba(0,0,0,0.15)]"
+                  className="px-5 py-2 rounded-[30px] bg-[#405bff] hover:bg-[#344bd6] text-white text-[13px] font-medium shadow-[0_0_15px_rgba(64,91,255,0.4)] transition-all cursor-pointer"
                 >
-                  Provision Database
+                  Provision Database &rarr;
                 </button>
               </div>
             </form>

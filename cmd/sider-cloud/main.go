@@ -169,7 +169,7 @@ func (s *Supervisor) CreateDatabase(name, region string) (*DatabaseInstance, err
 		name = fmt.Sprintf("sider-%s", randomHex(3))
 	}
 	if region == "" {
-		region = "Cloud Edge Node (ap-south-1)"
+		region = "ind-tbn-1"
 	}
 
 	tcpPort, httpPort, err := s.findNextFreePorts()
