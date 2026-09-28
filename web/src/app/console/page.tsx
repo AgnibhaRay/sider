@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { SiderLogo } from "@/components/SiderLogo";
+import { ThreeDarkCanvas } from "@/components/ThreeDarkCanvas";
 import { useUser, UserButton } from "@clerk/nextjs";
 
 interface DatabaseInstance {
@@ -690,9 +691,13 @@ printf "AUTH ${token}\\nPUT alpha:ping pong\\nGET alpha:ping\\nINFO\\n" | nc ${h
 
   return (
     <div
-      className="min-h-screen text-[#ffffff] flex flex-col font-sans select-none antialiased relative"
+      className="min-h-screen text-[#ffffff] flex flex-col font-sans select-none antialiased relative overflow-x-hidden"
       style={{ backgroundColor: "#0e0e0e", fontFamily: "var(--font-inter), sans-serif" }}
     >
+      {/* Ambient 3D Neon Constellation Grid */}
+      <div className="fixed inset-0 w-full h-full pointer-events-none opacity-30 z-0">
+        <ThreeDarkCanvas />
+      </div>
       {/* 1. TOP SIGNAL STRIP (VIOLET GLOW ACCENT) */}
       <div
         className="w-full h-10 px-4 text-white text-[12px] font-medium flex items-center justify-center gap-2 border-b border-[#414042]/50 z-50 sticky top-0"
