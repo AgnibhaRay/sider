@@ -1,6 +1,19 @@
 import { clerkMiddleware } from "@clerk/nextjs/server";
+import { NextResponse } from "next/server";
 
-export default clerkMiddleware();
+export default clerkMiddleware((auth, req) => {
+  const host = req.headers.get("host") || "";
+  const { pathname } = req.nextUrl;
+
+  // Seamless domain routing:
+  // sider-cloud.vercel.app -> serves /cloud (Sider Cloud Cockpit & Quests)
+  // siderdb.vercel.app -> serves / (Sider Database Engine Folio & Info)
+  if (host.includes("sider-cloud") && pathname === "/") {
+    return NextResponse.rewrite(new URL("/cloud", req.url));
+  }
+
+  return NextResponse.next();
+});
 
 export const config = {
   matcher: [
