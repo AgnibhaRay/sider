@@ -642,7 +642,7 @@ printf "AUTH ${token}\\nPUT alpha:ping pong\\nGET alpha:ping\\nINFO\\n" | nc ${h
         }}
       >
         <span>
-          <strong>Sider Cloud v2.1.0</strong>: Zero-dependency LSM storage with native SkipList MemTable, WAL durability & SSTable tiering.
+          <strong>Sider Cloud Public Alpha v0.2.1</strong>: Zero-dependency LSM storage with native SkipList MemTable, WAL durability & SSTable tiering.
         </span>
         <Link href="/" className="underline hover:opacity-85 font-medium ml-1">
           Explore Architecture &rarr;
@@ -661,9 +661,14 @@ printf "AUTH ${token}\\nPUT alpha:ping pong\\nGET alpha:ping\\nINFO\\n" | nc ${h
               >
                 Sider Cloud
               </span>
-              <span className="text-[11px] text-[#60646c] font-normal leading-tight">
-                LSM-Tree Console
-              </span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] text-[#60646c] font-normal leading-tight">
+                  LSM-Tree Console
+                </span>
+                <span className="px-1.5 py-0.2 rounded-[40px] text-[9px] font-mono bg-[#0d7f8c]/15 text-[#0d7f8c] border border-[#0d7f8c]/30 font-semibold">
+                  ALPHA
+                </span>
+              </div>
             </div>
           </Link>
 
