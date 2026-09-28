@@ -8,6 +8,8 @@ import { HorizonLockCanvas } from "../components/HorizonLockCanvas";
 import { ScrollReveal } from "../components/ScrollReveal";
 import { LaserBorderCard } from "../components/LaserBorderCard";
 import { KineticStreamRibbon } from "../components/KineticStreamRibbon";
+import { BuildSection } from "../components/BuildSection";
+import { DocsSection } from "../components/DocsSection";
 import { useUser, UserButton } from "@clerk/nextjs";
 
 export default function SiderCloudLanding() {
@@ -101,18 +103,24 @@ export default function SiderCloudLanding() {
           </Link>
 
           {/* Center Links */}
-          <nav className="hidden md:flex items-center gap-6 text-[13px] text-[#d1d3d4] font-medium">
+          <nav className="hidden md:flex items-center gap-5 text-[13px] text-[#d1d3d4] font-medium">
+            <a href="#build" className="text-[#00f0ff] hover:text-white transition-colors flex items-center gap-1.5 font-semibold">
+              <span>Build Quests</span>
+              <span className="text-[9px] font-mono px-1.5 py-0.2 rounded-full bg-[#00f0ff]/20 text-[#00f0ff] border border-[#00f0ff]/30">
+                NEW
+              </span>
+            </a>
+            <a href="#docs" className="hover:text-white transition-colors">
+              Documentation
+            </a>
             <a href="#console-wizard" className="hover:text-white transition-colors">
               Access Cockpit
-            </a>
-            <a href="#architecture" className="hover:text-white transition-colors">
-              LSM Engine
             </a>
             <a href="#specs" className="hover:text-white transition-colors">
               Hardware Specs
             </a>
             <a href="#quickstart" className="hover:text-white transition-colors">
-              SDK Quickstart
+              SDKs
             </a>
           </nav>
 
@@ -379,6 +387,9 @@ export default function SiderCloudLanding() {
       {/* KINETIC LIVE OPERATIONS STREAM RIBBON */}
       <KineticStreamRibbon />
 
+      {/* BUILD SECTION (Quests & build.md Agent Blueprints) */}
+      <BuildSection />
+
       {/* 5. PRODUCT WHITE PANEL (LaunchDarkly high-contrast signature) */}
       <section className="w-full max-w-[1200px] mx-auto px-4 sm:px-6 py-14">
         <ScrollReveal variant="swoop-up" delayMs={80} enableTilt={true}>
@@ -560,6 +571,9 @@ export default function SiderCloudLanding() {
         </ScrollReveal>
       </section>
 
+      {/* DOCUMENTATION CODEX (Wire Protocol & APIs) */}
+      <DocsSection />
+
       {/* 7. BARE-METAL CLUSTER SPECIFICATIONS CARD */}
       <section id="specs" className="w-full max-w-[1200px] mx-auto px-4 sm:px-6 py-14 border-t border-[#414042]/50">
         <ScrollReveal variant="whoop-in" delayMs={80} enableTilt={true}>
@@ -623,6 +637,12 @@ export default function SiderCloudLanding() {
           </div>
 
           <div className="flex items-center gap-6">
+            <a href="#build" className="hover:text-white text-[#00f0ff] font-medium">
+              Build Quests
+            </a>
+            <Link href="/docs" className="hover:text-white font-medium">
+              Documentation
+            </Link>
             <Link href="/console" className="hover:text-white font-medium">
               Console Cockpit
             </Link>
