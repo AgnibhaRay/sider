@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useRef, useEffect } from "react";
-import { Header } from "./Header";
+import { SiderDbHeader } from "./SiderDbHeader";
 import { ScrollProgress } from "./ScrollProgress";
 import { CustomCursor } from "./CustomCursor";
 import { HeroSection } from "./HeroSection";
@@ -10,7 +10,7 @@ import { FeatureSection } from "./FeatureSection";
 import { TerminalSection } from "./TerminalSection";
 import { BenchmarkSection } from "./BenchmarkSection";
 import { ArchitectureSection } from "./ArchitectureSection";
-import { Footer } from "./Footer";
+import { CloudFooter } from "./CloudFooter";
 
 export function SiderDbLanding() {
   const terminalRef = useRef<HTMLDivElement>(null);
@@ -37,10 +37,10 @@ export function SiderDbLanding() {
       {/* Delicate Scroll Progress Hairline Indicator */}
       <ScrollProgress />
 
-      {/* Minimal Header */}
-      <Header onFolioClick={scrollToTerminal} />
+      {/* Exact Original Sticky Header with Sider Cloud CTA */}
+      <SiderDbHeader onFolioClick={scrollToTerminal} />
 
-      {/* Hero & Painting Curtain Stage */}
+      {/* Hero & Painting Curtain Stage: Painting scrolls up and covers the hero, then both scroll away together */}
       <div className="relative w-full">
         <div className="sticky top-14 w-full h-[calc(100vh-3.5rem)] overflow-hidden z-0 bg-[#c4c3b6]">
           <HeroSection onExploreClick={scrollToTerminal} />
@@ -70,9 +70,9 @@ export function SiderDbLanding() {
         <ArchitectureSection />
       </div>
 
-      {/* Footer with Agnibha Ray Socials and Cloud Alpha CTAs */}
-      <div className="relative z-20 w-full bg-[#ebebeb]">
-        <Footer />
+      {/* High-Tech Cloud Footer (same as sider-cloud with Agnibha Ray socials and cluster telemetry) */}
+      <div className="relative z-20 w-full bg-[#141414]">
+        <CloudFooter />
       </div>
     </main>
   );

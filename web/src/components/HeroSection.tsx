@@ -1,7 +1,6 @@
 "use client";
 
 import React from "react";
-import Link from "next/link";
 
 export function HeroSection({ onExploreClick }: { onExploreClick?: () => void }) {
   return (
@@ -11,17 +10,6 @@ export function HeroSection({ onExploreClick }: { onExploreClick?: () => void })
     >
       {/* Center Cluster */}
       <div className="flex-1 flex flex-col items-center justify-center text-center px-4 max-w-4xl mx-auto z-10">
-        {/* Alpha Cloud Announcement Chip */}
-        <a
-          href="https://sider-cloud.vercel.app"
-          className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-[30px] bg-[#000000] text-[#ffffff] text-[11px] font-mono mb-6 hover:scale-105 transition-transform shadow-[0_4px_14px_rgba(0,0,0,0.25)]"
-        >
-          <span className="w-1.5 h-1.5 rounded-full bg-[#00f0ff] animate-ping" />
-          <span className="text-[#00f0ff] font-bold">PUBLIC ALPHA RELEASE</span>
-          <span className="text-[#dfdcd5]">&bull;</span>
-          <span>Deploy to Sider Cloud on ind-tbn-1 &rarr;</span>
-        </a>
-
         {/* Sub-headline: Davinci 52px weight 500, #000000, letter-spacing -0.47px ('on' in italic) */}
         <h1
           className="text-[#000000] text-[36px] sm:text-[46px] md:text-[52px] leading-[1.0] tracking-[-0.47px] font-medium mb-6 select-none"
@@ -36,7 +24,7 @@ export function HeroSection({ onExploreClick }: { onExploreClick?: () => void })
           style={{ fontFamily: "var(--font-helvetica-now)" }}
         >
           <span>THROUGHPUT: 125,000 OPS</span>
-          <span className="hidden sm:inline text-[#595855]">&bull;</span>
+          <span className="hidden sm:inline text-[#595855]">•</span>
           <span>LATENCY: &lt; 1MS</span>
         </div>
 
@@ -44,12 +32,11 @@ export function HeroSection({ onExploreClick }: { onExploreClick?: () => void })
         <div className="flex flex-wrap items-center justify-center gap-3">
           <a
             href="https://sider-cloud.vercel.app"
-            className="pill-button inline-flex items-center justify-center gap-2 text-[#ffffff] bg-[#405bff] hover:bg-[#344bd6] px-[20px] py-[10px] rounded-[28.8px] text-[12px] font-medium tracking-wide transition-all hover:scale-105 no-underline shadow-[0_0_20px_rgba(64,91,255,0.4)]"
+            className="pill-button inline-flex items-center justify-center gap-2 text-[#ffffff] bg-[#000000] px-[20px] py-[9px] rounded-[28.8px] text-[12px] font-medium tracking-wide transition-all hover:scale-105 hover:bg-[#1a1a1a] no-underline shadow-none"
             style={{ fontFamily: "var(--font-helvetica-now)" }}
           >
-            <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
-            <span>test sider cloud alpha</span>
-            <span>&rarr;</span>
+            <span className="w-1.5 h-1.5 rounded-full bg-[#405bff] animate-pulse" />
+            <span>test sider cloud alpha &rarr;</span>
           </a>
 
           <a
@@ -58,7 +45,7 @@ export function HeroSection({ onExploreClick }: { onExploreClick?: () => void })
             className="pill-button inline-flex items-center justify-center text-[#ffffff] bg-[#000000] px-[17px] py-[9px] rounded-[28.8px] text-[12px] font-normal tracking-wide transition-all hover:scale-105 hover:opacity-90 no-underline shadow-none"
             style={{ fontFamily: "var(--font-helvetica-now)" }}
           >
-            launch local engine
+            launch sider engine
           </a>
 
           <a
@@ -86,14 +73,19 @@ export function HeroSection({ onExploreClick }: { onExploreClick?: () => void })
         </div>
       </div>
 
-      {/* Monumental Hero Wordmark */}
+      {/* Monumental Hero Wordmark:
+          Davinci serif at 374px weight 500, color #000000, letter-spacing -3.37px, line-height 0.84.
+          Extends beyond the visible viewport width — intentionally cropped at the edges.
+          The brand IS this wordmark at this scale. */}
       <div className="w-full flex justify-center items-end overflow-hidden select-none pointer-events-none mt-6 sm:mt-10 z-10">
         <div
           className="text-[#000000] font-medium tracking-[-3.37px] leading-[0.84] text-center whitespace-nowrap"
           style={{
             fontFamily: "var(--font-davinci)",
-            fontSize: "clamp(80px, 20vw, 374px)",
+            fontSize: "clamp(120px, 25vw, 374px)",
+            transform: "translateY(12%)",
           }}
+          aria-hidden="true"
         >
           SIDER
         </div>
