@@ -30,18 +30,18 @@ export function SiderDbLanding() {
   };
 
   return (
-    <main className="min-h-screen bg-[#c4c3b6] text-[#000000] flex flex-col relative overflow-x-hidden">
+    <main className="min-h-screen bg-[#c4c3b6] text-[#000000] flex flex-col relative overflow-x-clip">
       {/* Bespoke Renaissance Caliper Custom Cursor */}
       <CustomCursor />
 
       {/* Delicate Scroll Progress Hairline Indicator */}
       <ScrollProgress />
 
-      {/* Exact Original Sticky Header with Sider Cloud CTA */}
+      {/* Adaptive Header: Fixed at top on SIDER hero, transforms to floating pill when SIDER page ends */}
       <SiderDbHeader onFolioClick={scrollToTerminal} />
 
-      {/* Hero & Painting Curtain Stage: Painting scrolls up and covers the hero, then both scroll away together */}
-      <div className="relative w-full">
+      {/* Hero & Painting Curtain Stage: Hero stays fixed in place, Painting scrolls up and covers it */}
+      <div className="relative w-full pt-14">
         <div className="sticky top-14 w-full h-[calc(100vh-3.5rem)] overflow-hidden z-0 bg-[#c4c3b6]">
           <HeroSection onExploreClick={scrollToTerminal} />
         </div>

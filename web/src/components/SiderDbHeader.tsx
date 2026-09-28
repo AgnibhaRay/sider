@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { SiderLogo } from "./SiderLogo";
 
 interface HeaderProps {
@@ -9,21 +9,48 @@ interface HeaderProps {
 }
 
 export function SiderDbHeader({ onFolioClick }: HeaderProps) {
+  const [isFloating, setIsFloating] = useState(false);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      // Transition to floating pill once scrolled past the SIDER hero section
+      const threshold = window.innerHeight * 0.75;
+      setIsFloating(window.scrollY > threshold);
+    };
+
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    handleScroll();
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
+
   return (
-    <header className="w-full bg-[#c4c3b6] px-4 sm:px-10 h-14 flex items-center justify-between border-b border-[#dfdcd5]/60 sticky top-0 z-50 select-none">
+    <header
+      className={`fixed z-50 transition-all duration-300 select-none flex items-center justify-between ${
+        isFloating
+          ? "top-4 left-1/2 -translate-x-1/2 w-[92%] max-w-[1100px] h-14 bg-[#191919]/90 border border-white/15 rounded-[60px] px-6 shadow-[0_8px_32px_rgba(0,0,0,0.5)] backdrop-blur-md text-[#ffffff]"
+          : "top-0 left-0 w-full h-14 bg-[#c4c3b6] px-4 sm:px-10 border-b border-[#dfdcd5]/60 text-[#000000]"
+      }`}
+    >
       {/* Brand Identity — Top-Left Header Mark: Bespoke Sider SVG Logo */}
       <a
         href="#top"
         className="flex items-center gap-2.5 group text-decoration-none select-none"
         aria-label="Sider Home"
       >
-        <SiderLogo size={32} />
+        <SiderLogo size={isFloating ? 26 : 32} />
         <span
-          className="text-[13px] uppercase font-medium tracking-[0.1em] text-[#000000] group-hover:opacity-75 transition-opacity"
+          className={`text-[13px] uppercase font-medium tracking-[0.1em] transition-colors ${
+            isFloating ? "text-white" : "text-[#000000]"
+          }`}
           style={{ fontFamily: "var(--font-helvetica-now)" }}
         >
           Sider
         </span>
+        {isFloating && (
+          <span className="hidden sm:inline-block text-[9px] font-mono uppercase bg-[#405bff]/20 text-[#7084ff] border border-[#405bff]/40 px-2 py-0.5 rounded-[30px] ml-1">
+            ind-tbn-1
+          </span>
+        )}
       </a>
 
       {/* Navigation — Sider Cloud CTA + Engine Folio + GitHub */}
@@ -31,18 +58,30 @@ export function SiderDbHeader({ onFolioClick }: HeaderProps) {
         {/* Prominent Sider Cloud Alpha CTA */}
         <a
           href="https://sider-cloud.vercel.app"
-          className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-[28.8px] bg-[#000000] text-[#ffffff] text-[11px] font-medium tracking-wide hover:scale-105 transition-all shadow-[0_2px_10px_rgba(0,0,0,0.2)]"
+          className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-[28.8px] text-[11px] font-medium tracking-wide hover:scale-105 transition-all ${
+            isFloating
+              ? "bg-[#405bff] text-white hover:bg-[#344bd6] shadow-[0_0_15px_rgba(64,91,255,0.4)]"
+              : "bg-[#000000] text-[#ffffff] shadow-[0_2px_10px_rgba(0,0,0,0.2)]"
+          }`}
           style={{ fontFamily: "var(--font-helvetica-now)" }}
         >
-          <span className="w-1.5 h-1.5 rounded-full bg-[#405bff] animate-pulse" />
+          <span
+            className={`w-1.5 h-1.5 rounded-full animate-pulse ${
+              isFloating ? "bg-white" : "bg-[#405bff]"
+            }`}
+          />
           <span>Sider Cloud Alpha</span>
-          <span className="text-[#a7a9ac]">&rarr;</span>
+          <span className={isFloating ? "text-white/80" : "text-[#a7a9ac]"}>
+            &rarr;
+          </span>
         </a>
 
         <a
           href="#interactive-terminal"
           onClick={onFolioClick}
-          className="ghost-text-link text-[12px] text-[#000000] hover:underline hidden sm:inline"
+          className={`ghost-text-link text-[12px] hover:underline hidden sm:inline transition-colors ${
+            isFloating ? "text-[#a7a9ac] hover:text-white" : "text-[#000000]"
+          }`}
           style={{ fontFamily: "var(--font-helvetica-now)", fontWeight: 400 }}
         >
           Engine Folio &amp; CLI
@@ -52,7 +91,9 @@ export function SiderDbHeader({ onFolioClick }: HeaderProps) {
           href="https://github.com/AgnibhaRay/sider"
           target="_blank"
           rel="noopener noreferrer"
-          className="flex items-center gap-1.5 text-[12px] text-[#000000] hover:underline"
+          className={`flex items-center gap-1.5 text-[12px] hover:underline transition-colors ${
+            isFloating ? "text-[#a7a9ac] hover:text-white" : "text-[#000000]"
+          }`}
           style={{ fontFamily: "var(--font-helvetica-now)", fontWeight: 400 }}
           aria-label="GitHub Repository"
         >
