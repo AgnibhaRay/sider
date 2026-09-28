@@ -354,3 +354,32 @@ body {
     cursor: none !important;
   }
 }
+
+/* Kinetic Whoop, Swoop, and Drop Keyframes */
+@keyframes tabSlideIn {
+  0% { transform: translateX(24px) scale(0.98); opacity: 0; filter: blur(6px); }
+  100% { transform: translateX(0) scale(1); opacity: 1; filter: blur(0); }
+}
+
+@keyframes marquee {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+@keyframes buttonPop {
+  0% { transform: scale(1); }
+  40% { transform: scale(0.92); }
+  75% { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+
+.kinetic-button {
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.kinetic-button:active {
+  transform: scale(0.94);
+}
+.kinetic-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 25px -5px rgba(64, 91, 255, 0.45);
+}

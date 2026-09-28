@@ -5,6 +5,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { SiderLogo } from "../components/SiderLogo";
 import { HorizonLockCanvas } from "../components/HorizonLockCanvas";
+import { ScrollReveal } from "../components/ScrollReveal";
+import { LaserBorderCard } from "../components/LaserBorderCard";
+import { KineticStreamRibbon } from "../components/KineticStreamRibbon";
 import { useUser, UserButton } from "@clerk/nextjs";
 
 export default function SiderCloudLanding() {
@@ -161,35 +164,38 @@ export default function SiderCloudLanding() {
         <div className="absolute top-10 left-1/2 -translate-x-1/2 w-[600px] h-[350px] bg-gradient-to-b from-[#405bff]/25 via-[#7084ff]/10 to-transparent blur-[120px] pointer-events-none -z-10" />
 
         {/* Eyebrow Tag */}
-        <div className="flex justify-center mb-6">
-          <div className="inline-flex items-center gap-2 px-4 py-1 rounded-[30px] bg-[#191919] border border-[#405bff]/40 text-[12px] text-[#d1d3d4] shadow-[0_0_20px_rgba(64,91,255,0.2)]">
-            <span className="w-2 h-2 rounded-full bg-[#405bff] animate-pulse" />
-            <span className="font-mono text-[#7084ff] font-semibold">PUBLIC ALPHA RELEASE</span>
-            <span className="text-[#6d6e71]">|</span>
-            <span className="font-mono text-[#a7a9ac]">Region: ind-tbn-1 Bare-Metal</span>
+        <ScrollReveal variant="drop" delayMs={40}>
+          <div className="flex justify-center mb-6">
+            <div className="inline-flex items-center gap-2 px-4 py-1 rounded-[30px] bg-[#191919] border border-[#405bff]/40 text-[12px] text-[#d1d3d4] shadow-[0_0_20px_rgba(64,91,255,0.2)]">
+              <span className="w-2 h-2 rounded-full bg-[#405bff] animate-pulse" />
+              <span className="font-mono text-[#7084ff] font-semibold">PUBLIC ALPHA RELEASE</span>
+              <span className="text-[#6d6e71]">|</span>
+              <span className="font-mono text-[#a7a9ac]">Region: ind-tbn-1 Bare-Metal</span>
+            </div>
           </div>
-        </div>
+        </ScrollReveal>
 
         {/* Hero Display Headline (LaunchDarkly signature: Line 1 white, Line 2 Signal Violet, tight 1.0 line height) */}
-        <div className="text-center max-w-4xl mx-auto space-y-4">
-          <h1 className="text-[44px] sm:text-[70px] lg:text-[88px] font-medium tracking-tight leading-[1.0] text-white">
-            Move at wire-speed.
-            <br />
-            <span className="bg-gradient-to-r from-[#405bff] via-[#7084ff] to-[#3dd6f5] bg-clip-text text-transparent">
-              Zero data loss LSM persistence.
-            </span>
-          </h1>
-          <p className="text-[17px] sm:text-[19px] text-[#d1d3d4] max-w-2xl mx-auto leading-relaxed pt-2">
-            The managed cloud for Sider. Get dedicated, isolated SkipList MemTable endpoints in seconds with automated WAL crash recovery and NVMe tiered SSTables.
-          </p>
-        </div>
+        <ScrollReveal variant="swoop-up" delayMs={120}>
+          <div className="text-center max-w-4xl mx-auto space-y-4">
+            <h1 className="text-[44px] sm:text-[70px] lg:text-[88px] font-medium tracking-tight leading-[1.0] text-white">
+              Move at wire-speed.
+              <br />
+              <span className="bg-gradient-to-r from-[#405bff] via-[#7084ff] to-[#3dd6f5] bg-clip-text text-transparent">
+                Zero data loss LSM persistence.
+              </span>
+            </h1>
+            <p className="text-[17px] sm:text-[19px] text-[#d1d3d4] max-w-2xl mx-auto leading-relaxed pt-2">
+              The managed cloud for Sider. Get dedicated, isolated SkipList MemTable endpoints in seconds with automated WAL crash recovery and NVMe tiered SSTables.
+            </p>
+          </div>
+        </ScrollReveal>
 
-        {/* 4. THE TWO-STEP CONSOLE ACCESS COCKPIT (Carbon Panel with Glow Halo) */}
-        <div id="console-wizard" className="mt-14 max-w-2xl mx-auto scroll-mt-28 relative">
-          {/* Card glow halo */}
-          <div className="absolute -inset-1 bg-gradient-to-b from-[#405bff]/30 via-[#7084ff]/10 to-transparent rounded-[36px] blur-xl opacity-75 -z-10" />
-
-          <div className="bg-[#191919] rounded-[30px] border border-[#414042] p-6 sm:p-8 shadow-[0_0_40px_rgba(64,91,255,0.25)]">
+        {/* 4. THE TWO-STEP CONSOLE ACCESS COCKPIT (Laser Border & Spring Drop) */}
+        <ScrollReveal variant="drop" delayMs={240} enableTilt={true}>
+          <div id="console-wizard" className="mt-14 max-w-2xl mx-auto scroll-mt-28 relative">
+            <LaserBorderCard glowColor="#405bff">
+              <div className="p-6 sm:p-8">
             
             {/* Step Indicator Header */}
             <div className="flex items-center justify-between border-b border-[#414042] pb-5 mb-6">
@@ -364,23 +370,29 @@ export default function SiderCloudLanding() {
                 </div>
               </div>
             )}
+              </div>
+            </LaserBorderCard>
           </div>
-        </div>
+        </ScrollReveal>
       </section>
+
+      {/* KINETIC LIVE OPERATIONS STREAM RIBBON */}
+      <KineticStreamRibbon />
 
       {/* 5. PRODUCT WHITE PANEL (LaunchDarkly high-contrast signature) */}
       <section className="w-full max-w-[1200px] mx-auto px-4 sm:px-6 py-14">
-        <div className="text-center mb-8">
-          <span className="text-[11px] font-semibold text-[#7084ff] uppercase tracking-wider font-mono">
-            LIVE CLUSTER DEMONSTRATION
-          </span>
-          <h2 className="text-[30px] sm:text-[38px] font-medium text-white tracking-tight mt-1">
-            Real-Time Engine Visualizer
-          </h2>
-          <p className="text-[14px] text-[#a7a9ac]">
-            Clean white product workspace floating on the dark cockpit canvas.
-          </p>
-        </div>
+        <ScrollReveal variant="swoop-up" delayMs={80} enableTilt={true}>
+          <div className="text-center mb-8">
+            <span className="text-[11px] font-semibold text-[#7084ff] uppercase tracking-wider font-mono">
+              LIVE CLUSTER DEMONSTRATION
+            </span>
+            <h2 className="text-[30px] sm:text-[38px] font-medium text-white tracking-tight mt-1">
+              Real-Time Engine Visualizer
+            </h2>
+            <p className="text-[14px] text-[#a7a9ac]">
+              Clean white product workspace floating on the dark cockpit canvas.
+            </p>
+          </div>
 
         {/* White panel with soft shadow */}
         <div className="bg-[#ffffff] text-[#1b1b1b] rounded-[24px] p-6 sm:p-8 shadow-[0_10px_40px_rgba(0,0,0,0.8)] border border-white/20 relative overflow-hidden">
@@ -430,13 +442,15 @@ export default function SiderCloudLanding() {
             </div>
           </div>
         </div>
+        </ScrollReveal>
       </section>
 
 
 
       {/* 6. CODE SNIPPET INTEGRATION (Carbon Panel with Dracula Syntax) */}
       <section id="quickstart" className="w-full max-w-[1200px] mx-auto px-4 sm:px-6 py-14 border-t border-[#414042]/50">
-        <div className="bg-[#191919] rounded-[30px] border border-[#414042] p-6 sm:p-8 shadow-[0_0_30px_rgba(0,0,0,0.6)]">
+        <ScrollReveal variant="swoop-up" delayMs={80} enableTilt={true}>
+          <div className="bg-[#191919] rounded-[30px] border border-[#414042] p-6 sm:p-8 shadow-[0_0_30px_rgba(0,0,0,0.6)]">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
             <div>
               <span className="text-[11px] font-semibold text-[#7084ff] uppercase tracking-wider font-mono">
@@ -468,14 +482,16 @@ export default function SiderCloudLanding() {
             </div>
           </div>
 
-          {/* Dracula syntax code block */}
+          {/* Dracula syntax code block with Kinetic Swoop */}
           <div className="relative rounded-[16px] bg-[#0e0e0e] p-5 font-mono text-[13px] border border-[#414042] overflow-x-auto">
             <button
               onClick={copyQuickstart}
-              className="absolute top-4 right-4 px-3.5 py-1 rounded-[30px] bg-[#191919] border border-[#414042] text-[11px] text-[#d1d3d4] hover:text-white hover:border-[#405bff] transition-all cursor-pointer"
+              className="absolute top-4 right-4 px-3.5 py-1 rounded-[30px] bg-[#191919] border border-[#414042] text-[11px] text-[#d1d3d4] hover:text-white hover:border-[#405bff] transition-all cursor-pointer z-20 active:scale-95"
             >
               {copiedCode ? "✓ Copied" : "Copy Code"}
             </button>
+
+            <div key={activeTab} className="animate-[tabSlideIn_0.32s_cubic-bezier(0.16,1,0.3,1)]">
 
             {activeTab === "python" && (
               <pre className="text-[#f8f8f2] leading-relaxed">
@@ -538,13 +554,16 @@ export default function SiderCloudLanding() {
                 </code>
               </pre>
             )}
+            </div>
           </div>
         </div>
+        </ScrollReveal>
       </section>
 
-      {/* 7. BARE-METAL CLUSTER SPECIFICATIONS CARD (Carbon + Violet Glow) */}
+      {/* 7. BARE-METAL CLUSTER SPECIFICATIONS CARD */}
       <section id="specs" className="w-full max-w-[1200px] mx-auto px-4 sm:px-6 py-14 border-t border-[#414042]/50">
-        <div className="bg-[#191919] rounded-[30px] border border-[#414042] p-8 shadow-[0_0_30px_rgba(0,0,0,0.5)]">
+        <ScrollReveal variant="whoop-in" delayMs={80} enableTilt={true}>
+          <div className="bg-[#191919] rounded-[30px] border border-[#414042] p-8 shadow-[0_0_30px_rgba(0,0,0,0.5)]">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-[#414042]">
             <div>
               <span className="text-[11px] font-semibold text-[#7084ff] uppercase tracking-wider font-mono">
@@ -589,6 +608,7 @@ export default function SiderCloudLanding() {
             </div>
           </div>
         </div>
+        </ScrollReveal>
       </section>
 
       {/* 8. FOOTER (Carbon fill, pill links) */}
